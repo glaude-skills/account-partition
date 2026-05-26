@@ -10,7 +10,7 @@
 새 Claude Code 세션에서:
 
 ```
-/plugin marketplace add gh:glaude-skills/account-partition
+/plugin marketplace add glaude-skills/account-partition
 /plugin install account-partition@account-partition
 ```
 

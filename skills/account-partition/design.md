@@ -58,11 +58,11 @@ Claude Code는 `CLAUDE_CONFIG_DIR` 환경변수로 설정 디렉토리를 통째
 
 ### 사용자 설치 절차
 ```
-/plugin marketplace add gh:glaude-skills/account-partition
+/plugin marketplace add glaude-skills/account-partition
 /plugin install account-partition@account-partition
 ```
 
-(`gh:<org>/<repo>` 형식으로 GitHub repo 등록. 본인 namespace fallback이면 `gh:GGGGGANG/account-partition`.)
+(`gh:<org>/<repo>` 형식으로 GitHub repo 등록. 본인 namespace fallback이면 `GGGGGANG/account-partition`.)
 
 ### 스킬 디렉토리
 plugin cache 안의 경로:

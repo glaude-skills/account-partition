@@ -168,7 +168,7 @@ account-partition 스킬을 실행해.
 
 ### 사전 조건
 
-- repo가 GitHub에 push되어 있고 `gh:<org>/account-partition` marketplace로 add됨
+- repo가 GitHub에 push되어 있고 `<org>/account-partition` marketplace로 add됨
 - `/plugin install account-partition@account-partition` 실행 완료
 - plugin cache 위치(`~/.claude*/plugins/cache/account-partition/account-partition/0.1.0/`)에 commands·skills 디렉토리 노출 확인
 
@@ -232,7 +232,7 @@ Manage multiple Claude CLI OAuth accounts via `CLAUDE_CONFIG_DIR` aliases (e.g.,
 ## Install
 
 ```
-/plugin marketplace add gh:<org>/account-partition
+/plugin marketplace add <org>/account-partition
 /plugin install account-partition@account-partition
 ```
 
@@ -286,7 +286,7 @@ git push -u origin main
 
 새 Claude Code 세션에서:
 ```
-/plugin marketplace add gh:<org>/account-partition
+/plugin marketplace add <org>/account-partition
 /plugin install account-partition@account-partition
 ```
 

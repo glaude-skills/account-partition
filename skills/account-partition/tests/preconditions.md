@@ -7,7 +7,7 @@
 
 ### 사전 조건
 
-- repo가 GitHub에 push되어 있고 `gh:glaude-skills/account-partition` marketplace로 add됨
+- repo가 GitHub에 push되어 있고 `glaude-skills/account-partition` marketplace로 add됨
 - `/plugin install account-partition@account-partition` 실행 완료
 - plugin cache 위치(`~/.claude*/plugins/cache/account-partition/account-partition/0.1.0/`)에 `commands/`·`skills/` 디렉토리 노출 확인
 
