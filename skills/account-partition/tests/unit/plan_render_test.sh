@@ -49,8 +49,8 @@ plan_q='{"metadata":{"action":"edit","alias_name":"work"},"operations":[{"op":"q
 out_q=$(echo "$plan_q" | bash "$SCRIPTS/plan-render.sh")
 assert_contains "$out_q" "격리 보존" "quarantine → '격리 보존'"
 
-# unlink 액션 + 새 op 라벨 검증
-plan_unlink='{"metadata":{"action":"unlink","alias_name":"x"},"operations":[{"op":"auth_logout","config_dir":"/tmp/.x"},{"op":"remove_block","file":"/tmp/.zshrc","marker":"# account-partition: x"},{"op":"archive_dir","src":"/tmp/.x","remove_after":true}]}'
+# unlink 액션 + 새 op 라벨 검증 (archive_dir + remove_dir 분리 구조)
+plan_unlink='{"metadata":{"action":"unlink","alias_name":"x"},"operations":[{"op":"auth_logout","config_dir":"/tmp/.x"},{"op":"remove_block","file":"/tmp/.zshrc","marker":"# account-partition: x"},{"op":"archive_dir","src":"/tmp/.x"},{"op":"remove_dir","path":"/tmp/.x"}]}'
 out_u=$(echo "$plan_unlink" | bash "$SCRIPTS/plan-render.sh")
 
 echo "--- plan-render unlink output ---"
@@ -61,6 +61,6 @@ assert_contains "$out_u" "연동 해제" "unlink action 라벨"
 assert_contains "$out_u" "로그아웃" "auth_logout 라벨"
 assert_contains "$out_u" "제거" "remove_block 라벨"
 assert_contains "$out_u" "아카이브" "archive_dir 라벨"
-assert_contains "$out_u" "원본 제거" "archive_dir remove_after=true 라벨"
+assert_contains "$out_u" "/tmp/.x" "remove_dir: 원본 경로 표시 (별도 op로 분리됨)"
 
 print_summary

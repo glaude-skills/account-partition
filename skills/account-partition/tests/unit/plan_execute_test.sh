@@ -77,7 +77,7 @@ else
   ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 실패 후 상태 파일 없음"
 fi
 
-# 시나리오 3: archive_dir — dir 생성 → archive → 원본 사라짐
+# 시나리오 3: archive_dir만 → 원본 유지 + archive 파일 생성
 sb3=$(make_sandbox)
 trap 'cleanup_sandbox "$sb"; cleanup_sandbox "$sb2"; cleanup_sandbox "$sb3"' EXIT
 
@@ -87,7 +87,7 @@ echo "data" > "$sb3/.claude-arch/file.txt"
 plan_arch=$(cat <<JSON
 {
   "metadata": {"action":"unlink","alias_name":"arch","config_dir":"$sb3/.claude-arch"},
-  "operations": [{"op":"archive_dir","src":"$sb3/.claude-arch","remove_after":true}]
+  "operations": [{"op":"archive_dir","src":"$sb3/.claude-arch"}]
 }
 JSON
 )
@@ -95,9 +95,9 @@ JSON
 echo "$plan_arch" | PLAN_DIR="$sb3" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-execute.sh"
 
 if [[ -d "$sb3/.claude-arch" ]]; then
-  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive 후 원본 잔존"); echo "  ✗ archive 후 원본 잔존"
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive_dir만 → 원본 유지"
 else
-  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive 후 원본 제거됨"
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive_dir만인데 원본 제거됨"); echo "  ✗ archive_dir만인데 원본 제거됨"
 fi
 
 shopt -s nullglob
@@ -108,5 +108,81 @@ else
   ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive 파일 없음"); echo "  ✗ archive 파일 없음"
 fi
 shopt -u nullglob
+
+# 시나리오 4: archive_dir + remove_dir → 원본 제거
+sb4=$(make_sandbox)
+trap 'cleanup_sandbox "$sb"; cleanup_sandbox "$sb2"; cleanup_sandbox "$sb3"; cleanup_sandbox "$sb4"' EXIT
+
+mkdir -p "$sb4/.claude-arch2"
+echo "data2" > "$sb4/.claude-arch2/file.txt"
+
+plan_arch2=$(cat <<JSON
+{
+  "metadata": {"action":"unlink","alias_name":"arch2","config_dir":"$sb4/.claude-arch2"},
+  "operations": [
+    {"op":"archive_dir","src":"$sb4/.claude-arch2"},
+    {"op":"remove_dir","path":"$sb4/.claude-arch2"}
+  ]
+}
+JSON
+)
+
+echo "$plan_arch2" | PLAN_DIR="$sb4" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-execute.sh"
+
+if [[ -d "$sb4/.claude-arch2" ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive_dir+remove_dir 후 원본 잔존"); echo "  ✗ archive_dir+remove_dir 후 원본 잔존"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive_dir+remove_dir → 원본 제거됨"
+fi
+
+shopt -s nullglob
+archives4=("$sb4/.claude-arch2.removed."*.tar.gz)
+if [[ ${#archives4[@]} -gt 0 ]]; then
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive 파일 생성됨 (remove_dir 동반)"
+else
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive_dir+remove_dir: archive 파일 없음"); echo "  ✗ archive 파일 없음"
+fi
+shopt -u nullglob
+
+# 시나리오 5: create_symlink backup_if_exists → rollback 시 백업 복원
+sb5=$(make_sandbox)
+trap 'cleanup_sandbox "$sb"; cleanup_sandbox "$sb2"; cleanup_sandbox "$sb3"; cleanup_sandbox "$sb4"; cleanup_sandbox "$sb5"' EXIT
+
+mkdir -p "$sb5/src"
+echo "src-content" > "$sb5/src/item"
+echo "original-content" > "$sb5/dst-item"  # rollback 시 복원될 파일
+
+# create_symlink 실행 후 두 번째 op 실패 → 롤백 시 백업 복원 확인
+plan_sym=$(cat <<JSON
+{
+  "metadata": {"action":"add","alias_name":"sym5"},
+  "operations": [
+    {"op":"create_symlink","src":"$sb5/src/item","dst":"$sb5/dst-item","backup_if_exists":true},
+    {"op":"create_symlink","src":"/nonexistent-src","dst":"$sb5/nonexistent-dst"}
+  ]
+}
+JSON
+)
+
+if echo "$plan_sym" | PLAN_DIR="$sb5" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-execute.sh" 2>/dev/null; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 실패 시나리오인데 exit=0"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 두 번째 op 실패 시 exit=non-zero"
+fi
+
+# rollback 실행
+PLAN_DIR="$sb5" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-rollback.sh" 2>/dev/null
+
+# 백업이 원래 경로로 복원됐는지 확인
+if [[ -f "$sb5/dst-item" ]] && [[ ! -L "$sb5/dst-item" ]]; then
+  content5=$(cat "$sb5/dst-item")
+  if [[ "$content5" == "original-content" ]]; then
+    ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ rollback: symlink 백업 복원됨"
+  else
+    ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("rollback: 내용 불일치"); echo "  ✗ rollback: 내용 불일치 ($content5)"
+  fi
+else
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("rollback: 백업 복원 실패"); echo "  ✗ rollback: 백업 복원 실패"
+fi
 
 print_summary

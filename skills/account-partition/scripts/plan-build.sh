@@ -89,7 +89,10 @@ if shell_mode == "auto":
 ops.append({
     "op": "archive_dir",
     "src": config_dir,
-    "remove_after": True,
+})
+ops.append({
+    "op": "remove_dir",
+    "path": config_dir,
 })
 
 plan = {

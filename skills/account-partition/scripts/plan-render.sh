@@ -74,8 +74,7 @@ for op in ops:
   elif kind == "remove_block":
     print(f"  제거       {op['file']} 에서 marker '{op['marker']}' 블록 제거")
   elif kind == "archive_dir":
-    remove_note = " + 원본 제거" if op.get("remove_after") else ""
-    print(f"  아카이브   {op['src']} → <src>.removed.<ts>.tar.gz{remove_note}")
+    print(f"  아카이브   {op['src']} → <src>.removed.<ts>.tar.gz")
   else:
     print(f"  ?          {kind}: {op}")
 

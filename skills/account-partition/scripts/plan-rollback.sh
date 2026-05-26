@@ -29,6 +29,10 @@ with open(state_file) as f:
 
 completed = plan.get("_completed", [])
 ops = plan.get("operations", [])
+# _completed_ops: execute가 기록한 op 메타 (backup_path, archive_path 등 포함)
+# 인덱스 i → completed_ops[completed.index(i)] 로 찾음
+_completed_ops_list = plan.get("_completed_ops", [])
+_completed_ops_map = {completed[idx]: _completed_ops_list[idx] for idx in range(len(_completed_ops_list))} if _completed_ops_list else {}
 
 print(f"  rolling back {len(completed)} completed step(s) in reverse...")
 
@@ -46,6 +50,13 @@ for i in reversed(completed):
         elif kind == "create_symlink":
             if os.path.islink(op["dst"]):
                 os.unlink(op["dst"])
+            # _completed_ops_map에서 execute 시점 메타 읽음 (backup_path 포함 가능)
+            meta = _completed_ops_map.get(i, op)
+            backup = meta.get("_backup_path")
+            if backup and os.path.exists(backup):
+                subprocess.run(["mv", backup, op["dst"]], check=False)
+                print(f"  [{i}] rollback create_symlink: 백업 복원 {backup} → {op['dst']}")
+            else:
                 print(f"  [{i}] rollback create_symlink: rm {op['dst']}")
         elif kind == "remove_symlink":
             # 반대 방향은 정보 부족 — 사용자 안내
@@ -94,7 +105,13 @@ for i in reversed(completed):
         elif kind == "archive_dir":
             import glob
             src = op["src"]
-            archives = sorted(glob.glob(f"{src}.removed.*.tar.gz"), key=os.path.getmtime, reverse=True)
+            # execute가 기록한 정확한 archive 경로를 우선 사용
+            meta = _completed_ops_map.get(i, op)
+            recorded = meta.get("_archive_path")
+            if recorded and os.path.exists(recorded):
+                archives = [recorded]
+            else:
+                archives = sorted(glob.glob(f"{src}.removed.*.tar.gz"), key=os.path.getmtime, reverse=True)
             if archives:
                 latest = archives[0]
                 parent = os.path.dirname(src) or "."

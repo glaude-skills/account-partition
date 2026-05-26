@@ -47,6 +47,7 @@ with open(state_file, "w") as f:
     json.dump(plan, f, ensure_ascii=False, indent=2)
 
 completed = []
+completed_ops = []  # op 메타 포함 (rollback이 _backup_path 등 읽음)
 
 def unique_ts():
     return datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
@@ -80,6 +81,7 @@ try:
                 if op.get("backup_if_exists"):
                     backup = f"{dst}.bak.{unique_ts()}"
                     subprocess.run(["cp", "-Rp", dst, backup], check=True)
+                    op["_backup_path"] = backup  # rollback 복원용
                 subprocess.run(["rm", "-rf", dst], check=True)
             os.symlink(src, dst)
 
@@ -121,11 +123,16 @@ try:
         elif kind == "auth_logout":
             cfg = op["config_dir"]
             env = {**os.environ, "CLAUDE_CONFIG_DIR": cfg}
-            subprocess.run(
+            res = subprocess.run(
                 ["claude", "auth", "logout"],
                 env=env,
-                check=False,
+                capture_output=True, text=True,
             )
+            # logout은 best-effort: 이미 로그아웃이어도 OK. 단 출력 보고.
+            if res.returncode == 0:
+                print(f"  auth_logout OK: {res.stdout.strip()[:80]}")
+            else:
+                print(f"  auth_logout 경고 (계속 진행): {res.stderr.strip()[:120]}")
 
         elif kind == "remove_block":
             marker = op.get("marker", "")
@@ -133,10 +140,11 @@ try:
                 name = marker.split(":", 1)[1].strip()
                 shell_rc_script = os.path.join(scripts_dir, "shell-rc.sh")
                 if os.path.isfile(shell_rc_script):
-                    subprocess.run(
+                    rc = subprocess.run(
                         ["bash", shell_rc_script, "remove", op["file"], name],
-                        check=False,
                     )
+                    if rc.returncode != 0:
+                        raise RuntimeError(f"remove_block failed: {op['file']} marker={marker}")
                 else:
                     # fallback: marker + 다음 라인 직접 제거
                     f_path = op["file"]
@@ -162,21 +170,33 @@ try:
                 raise FileNotFoundError(f"archive_dir source missing: {src}")
             ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
             dest = f"{src}.removed.{ts}.tar.gz"
+            tmp = dest + ".tmp"
             parent = os.path.dirname(src) or "."
             base = os.path.basename(src)
-            subprocess.run(["tar", "czf", dest, "-C", parent, base], check=True)
-            if op.get("remove_after"):
-                subprocess.run(["rm", "-rf", src], check=True)
+            # temp 파일로 압축
+            subprocess.run(["tar", "czf", tmp, "-C", parent, base], check=True)
+            # 무결성 검증
+            verify = subprocess.run(["tar", "tzf", tmp], capture_output=True)
+            if verify.returncode != 0:
+                subprocess.run(["rm", "-f", tmp], check=False)
+                raise RuntimeError(f"archive integrity check failed: {src}")
+            # 원자적 rename
+            os.rename(tmp, dest)
+            # 백업 경로를 op 메타에 기록 (rollback·후속 remove_dir 참조용)
+            op["_archive_path"] = dest
+            print(f"  archive 생성·검증 완료: {dest}")
 
         else:
             raise RuntimeError(f"unknown op: {kind}")
 
         completed.append(i)
+        completed_ops.append(op)  # op 메타(수정 포함) 저장
         print(f"  [{i+1}/{len(ops)}] {kind} OK")
 
 except Exception as e:
     print(f"  FAIL at step {len(completed)+1}: {e}", file=sys.stderr)
     plan["_completed"] = completed
+    plan["_completed_ops"] = completed_ops  # op 메타 (rollback 복원용)
     plan["_failed_at"] = len(completed)
     plan["_error"] = str(e)
     with open(state_file, "w") as f:

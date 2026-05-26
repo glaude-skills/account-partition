@@ -44,11 +44,12 @@ plan_cp='{"metadata":{"action":"edit","alias_name":"w"},"operations":[{"op":"cop
 out_cp=$(echo "$plan_cp" | bash "$SCRIPTS/plan-shell-out.sh")
 assert_contains "$out_cp" "cp -Rp /a /b" "copy → cp -Rp (디렉토리 가능성)"
 
-# archive_dir op (remove_after=true)
-plan_sh='{"metadata":{"action":"unlink","alias_name":"x"},"operations":[{"op":"archive_dir","src":"/tmp/.x","remove_after":true}]}'
+# archive_dir op (무결성 검증 포함, remove_dir이 별도 op)
+plan_sh='{"metadata":{"action":"unlink","alias_name":"x"},"operations":[{"op":"archive_dir","src":"/tmp/.x"},{"op":"remove_dir","path":"/tmp/.x"}]}'
 out_sh=$(echo "$plan_sh" | bash "$SCRIPTS/plan-shell-out.sh")
 assert_contains "$out_sh" "tar czf" "tar 명령"
-assert_contains "$out_sh" "rm -rf /tmp/.x" "원본 제거"
+assert_contains "$out_sh" "tar tzf" "무결성 검증 명령"
+assert_contains "$out_sh" "rm -rf /tmp/.x" "원본 제거 (remove_dir op)"
 
 # auth_logout op
 plan_al='{"metadata":{"action":"unlink","alias_name":"y"},"operations":[{"op":"auth_logout","config_dir":"/tmp/.y"}]}'

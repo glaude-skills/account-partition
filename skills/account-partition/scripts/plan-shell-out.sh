@@ -70,9 +70,9 @@ for op in ops:
         parent = os.path.dirname(src) or "."
         base = os.path.basename(src)
         dest_pat = src + ".removed.$(date +%Y%m%d-%H%M%S)-$$.tar.gz"
-        print(f"tar czf {sh(dest_pat)} -C {sh(parent)} {sh(base)}")
-        if op.get("remove_after"):
-            print(f"rm -rf {sh(src)}")
+        tmp_pat = dest_pat + ".tmp"
+        print(f"tar czf {sh(tmp_pat)} -C {sh(parent)} {sh(base)}")
+        print(f"tar tzf {sh(tmp_pat)} > /dev/null && mv {sh(tmp_pat)} {sh(dest_pat)}")
     else:
         print(f"# (unknown op: {kind})")
 PYEOF
