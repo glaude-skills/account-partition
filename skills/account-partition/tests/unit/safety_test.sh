@@ -84,4 +84,12 @@ else
   ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ check-active: 비활성 dir 정확 판별"
 fi
 
+# B-1 회귀 방지: cp 실패 시 exit=1
+unbackupable="$sb/missing-file"
+if bash "$SCRIPTS/safety.sh" backup "$unbackupable" 2>/dev/null; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("backup 실패 시 exit=0 (B-1 회귀)"); echo "  ✗ backup 미존재 파일에 exit=0"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ backup 미존재 파일 → exit=1"
+fi
+
 print_summary

@@ -13,13 +13,18 @@ now_ts() {
   date +%Y%m%d-%H%M%S
 }
 
+unique_ts() {
+  # 같은 초 내 연속 호출에서도 유일성 보장 (PID suffix)
+  echo "$(now_ts)-$$"
+}
+
 lock_path() {
   echo "$1/.account-partition.lock"
 }
 
 acquire_lock() {
-  local config_dir="${1:?Usage: $0 lock <config_dir> <pid>}"
-  local pid="${2:?pid required}"
+  local config_dir="$1"
+  local pid="$2"
   local lock
   lock=$(lock_path "$config_dir")
 
@@ -27,7 +32,7 @@ acquire_lock() {
     local existing
     existing=$(cat "$lock" 2>/dev/null || echo "")
     if [[ "$existing" == "$pid" ]]; then
-      return 0  # idempotent — 같은 PID 재진입 허용
+      return 0  # idempotent
     fi
     if [[ -n "$existing" ]] && kill -0 "$existing" 2>/dev/null; then
       echo "Error: lock held by PID $existing" >&2
@@ -37,7 +42,13 @@ acquire_lock() {
   fi
 
   mkdir -p "$config_dir"
-  echo "$pid" > "$lock"
+  # noclobber로 원자적 create. 좀비 정리와 write 사이 race window는 남으나
+  # 단일 머신·단일 사용자 가정에서 실용적 위험 낮음. v2 후속에서 flock/mkdir 기반 강화.
+  if ( set -C; echo "$pid" > "$lock" ) 2>/dev/null; then
+    return 0
+  fi
+  echo "Error: lock race detected (another process acquired between cleanup and write)" >&2
+  return 1
 }
 
 release_lock() {
@@ -46,6 +57,7 @@ release_lock() {
   local lock
   lock=$(lock_path "$config_dir")
 
+  # lockfile 없으면 무음 성공 (이미 해제됨 또는 한번도 잡힌 적 없음 — 호출자 안심).
   if [[ -f "$lock" ]]; then
     local existing
     existing=$(cat "$lock")
@@ -95,12 +107,12 @@ except Exception:
 }
 
 backup_file() {
-  local path="${1:?Usage: $0 backup <path>}"
+  local path="$1"
   [[ -e "$path" ]] || { echo "Error: $path not found" >&2; return 1; }
-  local ts; ts=$(now_ts)
+  local ts; ts=$(unique_ts)
   local backup="${path}.bak.${ts}"
-  cp -p "$path" "$backup"
-  chmod 0600 "$backup"
+  cp -p "$path" "$backup" || { echo "Error: backup failed (cp)" >&2; return 1; }
+  chmod 0600 "$backup" || { echo "Error: chmod failed on $backup" >&2; rm -f "$backup"; return 1; }
   echo "$backup"
 }
 
@@ -108,7 +120,7 @@ quarantine_item() {
   local config_dir="${1:?Usage: $0 quarantine <config_dir> <item_path>}"
   local item_path="${2:?item_path required}"
   [[ -e "$item_path" ]] || { echo "Error: $item_path not found" >&2; return 1; }
-  local ts; ts=$(now_ts)
+  local ts; ts=$(unique_ts)
   local q_dir="$config_dir/.account-partition-quarantine"
   mkdir -p "$q_dir"
 
@@ -116,7 +128,7 @@ quarantine_item() {
   item_name=$(basename "$item_path")
   local dest="$q_dir/${item_name}.${ts}"
 
-  mv "$item_path" "$dest"
+  mv "$item_path" "$dest" || { echo "Error: quarantine move failed" >&2; return 1; }
   echo "$dest"
 }
 
