@@ -73,27 +73,19 @@ bash "$SCRIPTS/safety.sh" check-active "$HOME/.claude-<name>"
 
 활성 시 차단.
 
-### Step 3. 셸 통합 모드 — 자동/수동
+### Step 3. Plan 생성
 
-`AskUserQuestion`:
-```
-질문: ~/.zshrc 라인을 어떻게 정리할까요?
-옵션:
-  - 자동 제거 (Recommended) — managed alias 블록 자동 제거
-  - 수동 — 명령만 출력
-```
-
-### Step 4. Plan 생성
+managed alias unlink는 **항상 자동 모드**. 사용자에게 zshrc 정리 방식을 묻지 않음. (외부 alias는 §Step 1a에서 이미 수동 분기 처리.)
 
 ```bash
 bash "$SCRIPTS/plan-build.sh" unlink \
   --name "<name>" \
   --config-dir "$HOME/.claude-<name>" \
   --shell-rc "$HOME/.zshrc" \
-  --shell-mode "<auto|manual>" > /tmp/account-partition-plan.json
+  --shell-mode auto > /tmp/account-partition-plan.json
 ```
 
-### Step 5. 미리보기 + 영향 안내
+### Step 4. 미리보기 + 영향 안내
 
 ```bash
 cat /tmp/account-partition-plan.json | bash "$SCRIPTS/plan-render.sh"
@@ -105,7 +97,7 @@ cat /tmp/account-partition-plan.json | bash "$SCRIPTS/plan-render.sh"
    백업: ~/.claude-<name>.removed.<ts>.tar.gz (자동 삭제 안 함)
 ```
 
-### Step 6. 최종 확인
+### Step 5. 최종 확인
 
 `AskUserQuestion`:
 ```
@@ -116,7 +108,7 @@ cat /tmp/account-partition-plan.json | bash "$SCRIPTS/plan-render.sh"
   - 명령 출력만 (실제 변경 없이 plan을 셸 명령으로 출력)
 ```
 
-### Step 7. Lock + 실행
+### Step 6. Lock + 실행
 
 ```bash
 bash "$SCRIPTS/safety.sh" lock "$HOME/.claude-<name>" "$$"
@@ -133,7 +125,7 @@ fi
 bash "$SCRIPTS/safety.sh" unlock "$HOME/.claude-<name>" "$$"
 ```
 
-### Step 8. 결과 출력
+### Step 7. 결과 출력
 
 성공:
 ```
@@ -146,4 +138,4 @@ bash "$SCRIPTS/safety.sh" unlock "$HOME/.claude-<name>" "$$"
 복원하려면 백업 압축 해제: tar xzf <백업> -C ~ → /account-partition:add 로 재등록.
 ```
 
-수동 모드이면 명령 시퀀스 출력만 (`명령 출력만` 선택과 동일하게 plan-shell-out.sh 출력).
+최종 확인에서 "명령 출력만" 선택 시 plan-shell-out.sh로 셸 시퀀스만 출력하고 종료.
