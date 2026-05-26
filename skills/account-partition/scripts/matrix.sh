@@ -68,7 +68,29 @@ print("  " + "─" * 16 + "  " + "─" * 27 + "  " + "─" * 12)
 for meta in accounts:
     alias = meta.get("alias", "")
     email = meta.get("email") or ""
-    login = "✓" if email else "—"
+    login = "—"
+
+    # claude auth status cross-check (SKIP_AUTH_STATUS=1이면 생략)
+    if not os.environ.get("SKIP_AUTH_STATUS"):
+        d = meta.get("dir", "")
+        try:
+            status_res = subprocess.run(
+                ["claude", "auth", "status"],
+                env={**os.environ, "CLAUDE_CONFIG_DIR": d},
+                capture_output=True, text=True, timeout=5,
+            )
+            if status_res.returncode == 0:
+                status_data = json.loads(status_res.stdout)
+                if status_data.get("loggedIn"):
+                    login = "✓"
+                    if not email:
+                        email = status_data.get("email", "")
+        except Exception:
+            pass
+
+    # fallback: .claude.json의 email 유무로 판별
+    if login == "—" and meta.get("email"):
+        login = "✓"
     if not email:
         email = "—"
     # alias가 이미 "claude-xxx" 형태인 경우도 있고, 그냥 디렉토리 basename인 경우도 있음

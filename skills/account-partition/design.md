@@ -505,24 +505,24 @@ CC는 `commands/<name>.md` 파일을 **install된 plugin의 cache 위치**에서
 
 ## 19. v2 / 후속 과제
 
-### v0.3 후보 (소규모 — login/logout 자동화)
+### v0.3 구현 완료 (2026-05-26 — login/logout 자동화)
 
-CC가 정식으로 `claude auth` subcommand를 제공한다는 발견 (2026-05-26):
+CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕으로 구현:
 - `claude auth login` — 브라우저 OAuth 흐름 시작 (사용자 인증 1회만 필요)
 - `claude auth logout` — 완전 자동 (keychain entry까지 CC가 정리)
-- `claude auth status` — 인증 상태 확인 (matrix.sh의 keychain hash fallback 우회 가능)
+- `claude auth status` — 인증 상태 확인 (matrix.sh의 keychain hash fallback 우회)
 
-추가할 기능:
-- **Add 흐름 마지막에 "지금 로그인할까요?" 옵션** — alias 생성 직후 `CLAUDE_CONFIG_DIR=<dir> claude auth login` 자동 실행. 사용자는 브라우저에서 본인 인증만 하면 끝
-- **`/account-partition:login` 새 명령** — 등록된 alias 선택 → 해당 CONFIG_DIR로 login. 이미 로그인된 alias에는 "재로그인" 옵션
-- **`/account-partition:logout` 새 명령** — alias 선택 → `claude auth logout` 자동 실행
-- **matrix.sh 정확도 향상** — `claude auth status`로 cross-check. keychain hash 알고리즘 미확인 문제(Phase A.2 fallback) 부분 해결
+구현된 기능:
+- **`/account-partition:login` 새 명령** (`skills/login/SKILL.md`, `commands/login.md`) — 등록된 alias 선택 → 해당 CONFIG_DIR로 login. 이미 로그인된 alias도 재로그인 지원
+- **`/account-partition:logout` 새 명령** (`skills/logout/SKILL.md`, `commands/logout.md`) — 로그인된 alias 목록 → 선택 → `claude auth logout` 자동 실행
+- **Add 흐름 Step 10** — alias 생성 직후 "지금 OAuth 로그인할까요?" 옵션 (`skills/add/SKILL.md`)
+- **matrix.sh 정확도 향상** — `claude auth status`로 cross-check. `SKIP_AUTH_STATUS=1` env로 skip 가능 (단위 테스트용)
 
 권한 모델 (사용자 손이 필요한 부분):
 - macOS keychain 첫 접근 시 OS 다이얼로그 1회 ("Always Allow")
 - Anthropic OAuth 인증 — 브라우저에서 본인 계정 로그인 1회
 
-그 외 모든 단계는 plugin 자동화 가능.
+그 외 모든 단계는 plugin 자동화.
 
 ### v2 후속 (대형)
 

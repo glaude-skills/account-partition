@@ -204,6 +204,29 @@ bash "$SCRIPTS/safety.sh" unlock "$HOME/.claude-<name>" "$$"
   alias claude-<name>="CLAUDE_CONFIG_DIR=$HOME/.claude-<name> command claude"
 ```
 
+### Step 10. 지금 로그인할까요? (v0.3 추가)
+
+`AskUserQuestion`:
+```
+질문: 지금 OAuth 로그인할까요? (브라우저 열림)
+옵션:
+  - 예 — 지금 바로
+  - 아니오 — 나중에 (claude-<name> 실행 후 직접 또는 /account-partition:login)
+```
+
+"예" 선택 시:
+```bash
+echo "브라우저가 열립니다. Anthropic 페이지에서 인증 완료 후 자동으로 돌아옵니다..."
+CLAUDE_CONFIG_DIR="$HOME/.claude-<name>" claude auth login
+```
+
+이후 `claude auth status`로 검증:
+```bash
+CLAUDE_CONFIG_DIR="$HOME/.claude-<name>" claude auth status
+```
+
+로그인 완료 보고. 실패 시 재시도 안내.
+
 ## 에러 처리
 
 - 활성 세션 게이트 차단 → 사용자에게 종료 후 재시도 안내

@@ -20,7 +20,7 @@ echo '{"oauthAccount":{"emailAddress":"personal@example.com"}}' > "$sb/.claude-p
 echo "{}" > "$sb/.claude-shared/settings.json"
 ln -s "$sb/.claude-shared/settings.json" "$sb/.claude-work/settings.json"
 
-out=$(HOME="$sb" SHARED_POOL="$sb/.claude-shared" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/matrix.sh" 2>&1)
+out=$(HOME="$sb" SHARED_POOL="$sb/.claude-shared" SCRIPTS_DIR="$SCRIPTS" SKIP_AUTH_STATUS=1 bash "$SCRIPTS/matrix.sh" 2>&1)
 
 echo "--- matrix.sh output ---"
 echo "$out"
@@ -40,7 +40,7 @@ assert_contains "$out" "범례" "범례 섹션"
 # 빈 환경 — 계정 없음
 sb2=$(make_sandbox)
 trap 'cleanup_sandbox "$sb"; cleanup_sandbox "$sb2"' EXIT
-out2=$(HOME="$sb2" SHARED_POOL="$sb2/.claude-shared" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/matrix.sh" 2>&1)
+out2=$(HOME="$sb2" SHARED_POOL="$sb2/.claude-shared" SCRIPTS_DIR="$SCRIPTS" SKIP_AUTH_STATUS=1 bash "$SCRIPTS/matrix.sh" 2>&1)
 assert_contains "$out2" "등록된 Claude 계정이 없습니다" "빈 환경 메시지"
 
 print_summary
