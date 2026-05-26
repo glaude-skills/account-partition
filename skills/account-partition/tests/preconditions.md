@@ -40,26 +40,39 @@
 
 ## 검증 2: Keychain service 이름 hash 규칙
 
-(Task A.2에서 채울 예정 — 양식만 생성)
+검증일: 2026-05-26
+검증자: claude (자동 시도) + gang (확인)
 
-검증일: <YYYY-MM-DD>
+### 결과: **알고리즘 미확인 → fallback 적용**
 
-### 알고리즘
-- 해시 함수: [TBD — SHA-256 / MD5 / CRC32 / 기타]
-- 입력 정규화: [TBD — 절대경로 / ~ 확장 / trailing slash 처리 등]
-- 출력 절단: [TBD — suffix 길이]
+### 시도한 알고리즘 (모두 매칭 실패)
 
-### 검증 매트릭스
+기준 매핑:
+- `/Users/gang/.claude-work` → `64ad4bd9`
+- `/Users/gang/.claude-personal` → `c28821e0`
 
-이 검증은 머신·사용자마다 실제 값이 다릅니다. 검증자가 본인 환경의 keychain entry suffix를 캡처해 채워 넣으세요.
+시도한 조합 (해시 함수 × 입력 정규화 변형):
+- 해시: SHA-256(first/mid/last 8), SHA-1(first/last 8), MD5(first/last 8), CRC32, Adler32
+- 정규화: raw, trailing-slash, ~ 확장, home-relative, name-only, `CLAUDE_CONFIG_DIR=` prefix, `file://` URI, realpath
+- 총 **63개 조합 모두 미스매치**. CC binary는 Mach-O 64-bit (Node.js 컴파일). 내부에 비표준 해시 또는 솔트·키 사용 추정.
 
-| CONFIG_DIR | 실제 suffix | 계산 결과 | 일치 |
-|---|---|---|---|
-| `~/.claude` | [본인 환경 값] | [본인 환경 값] | [TBD] |
-| `~/.claude-<예시>` | [본인 환경 값] | [본인 환경 값] | [TBD] |
+CC binary `strings` 분석에서도 hash 함수 직접 hint 미발견 (소스가 minified·shipped).
 
-`security dump-keychain 2>/dev/null | grep "Claude Code-credentials"` 출력으로 실제 suffix 확인 가능.
+### Fallback 정책 (디자인 §11 적용)
+
+v1에서 **keychain entry → config dir 매핑은 시도하지 않음**. 대신:
+
+1. **로그인 상태 판별은 `.claude.json`의 `oauthAccount.emailAddress` 유무로**:
+   - 값 있음 → "✓ 로그인됨" + 이메일 표시
+   - 빈 값/필드 없음 → "—" (로그인 안 됨 또는 첫 실행 전)
+2. **keychain entry 자체는 정보 표시 안 함** (어떤 entry가 어느 계정인지 알 수 없으므로 잘못된 매칭 방지)
+3. **v2에서 hash 알고리즘 reverse engineer 재시도** — Phase 후속 과제
+
+이 방식이 keychain 매칭보다 더 신뢰성 높음:
+- `.claude.json`은 CC가 직접 관리하므로 stale 가능성 낮음
+- keychain entry는 사용자가 `/logout` 후 stale 상태로 남을 수도
 
 ### 메모
 
-[버전·OS·CC 빌드 정보, 알 수 없는 변동 요소]
+- macOS 24.3.0 + CC version: Claude Code 2.x (claude-code-cli)
+- 해시 알고리즘 미확인은 v1 진행 차단 요소 아님 (디자인의 fallback이 이미 정상 동작 경로)
