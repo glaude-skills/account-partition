@@ -49,4 +49,16 @@ rendered=$(bash "$SCRIPTS/shell-rc.sh" render "side" "$sb/.claude-side")
 assert_contains "$rendered" 'alias claude-side=' "render에 alias 라인"
 assert_contains "$rendered" "$sb/.claude-side" "render에 경로"
 
+# 시나리오 7: remove — marker 다음에 비-alias 라인이 있으면 그 라인 보존
+rc3="$sb/.zshrc3"
+printf '# account-partition: weird\nexport SOMETHING=1\n' > "$rc3"
+bash "$SCRIPTS/shell-rc.sh" remove "$rc3" weird 2>/dev/null
+content3=$(cat "$rc3")
+if [[ "$content3" == *"# account-partition: weird"* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("marker 잔존"); echo "  ✗ marker 잔존"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ marker 제거됨"
+fi
+assert_contains "$content3" "export SOMETHING=1" "비-alias 라인 보존 (잘못 삭제 안 함)"
+
 print_summary

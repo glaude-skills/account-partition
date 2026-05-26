@@ -49,21 +49,27 @@ remove_alias() {
 import os, re, sys
 rc = os.environ['RC_PATH']
 name = os.environ['REMOVE_NAME']
-marker_re = re.compile(r'^# account-partition:\s*' + re.escape(name) + r'\s*$')
+marker_re = re.compile(r'^# account-partition:\s*' + re.escape(name) + r'\s*\$')
+alias_re = re.compile(r'^\s*alias\s+claude-' + re.escape(name) + r'\s*=')
 
 with open(rc) as f:
     lines = f.readlines()
 
 new_lines = []
-skip_next = False
-for line in lines:
-    if skip_next:
-        skip_next = False
+i = 0
+while i < len(lines):
+    if marker_re.match(lines[i]):
+        # marker matched — check if next line is the expected alias
+        if i + 1 < len(lines) and alias_re.match(lines[i + 1]):
+            # both marker and alias line: skip both
+            i += 2
+        else:
+            # next line is not the expected alias: remove marker only, preserve next line
+            sys.stderr.write('account-partition: remove_alias: marker next line is not alias claude-' + name + ' — preserved\\n')
+            i += 1
         continue
-    if marker_re.match(line):
-        skip_next = True
-        continue
-    new_lines.append(line)
+    new_lines.append(lines[i])
+    i += 1
 
 with open(rc, 'w') as f:
     f.writelines(new_lines)

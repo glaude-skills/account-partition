@@ -24,10 +24,14 @@ SCRIPTS="$SKILL_DIR/scripts"
 
 다른 동작 전에 alias 목록을 **객관식으로 먼저 보여주고** 사용자 선택을 받아야 한다. 임의 진행 금지.
 
-**선택지 수집** — 모든 등록된 alias + 현재 로그인 상태:
+> **default 계정 보호 정책**: default `~/.claude` (`claude` 명령어) 는 기본 선택지에서 **제외**한다. 별도 "기본 계정(claude) 로그인" 옵션을 추가해 선택 시 2차 확인을 거친다.
+
+**선택지 수집** — default `~/.claude` **제외**, 등록된 alias + 현재 로그인 상태:
 
 ```bash
 for d in $(HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" bash "$SCRIPTS/discover.sh" list-dirs); do
+  # default ~/.claude 는 기본 선택지에서 제외
+  if [ "$d" = "$HOME/.claude" ]; then continue; fi
   meta=$(bash "$SCRIPTS/discover.sh" meta "$d")
   alias=$(echo "$meta" | python3 -c "import json,sys; print(json.load(sys.stdin)['alias'])")
   status=$(CLAUDE_CONFIG_DIR="$d" claude auth status 2>/dev/null | python3 -c "
@@ -43,14 +47,28 @@ done
 
 **`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
 
-- 각 alias: 라벨 `claude-<name>` (또는 default는 `claude (기본)`), description은 위 status 결과 (`✓ <email>` 또는 `— (로그인 안 됨)`)
-- 마지막은 항상 **"취소"** (description "로그인 안 함, 종료")
+- 각 alias: 라벨 `claude-<name>`, description은 위 status 결과 (`✓ <email>` 또는 `— (로그인 안 됨)`)
+- 마지막에서 두 번째: **"기본 계정(claude) 로그인"** (description "기본 ~/.claude 계정 — 평소 쓰는 계정이라 주의")
+- 마지막: **"취소"** (description "로그인 안 함, 종료")
 
-이미 로그인된 alias도 선택지에 포함 (재로그인용). 옵션 4개 넘으면 미로그인 alias 우선, 취소는 항상 포함.
+이미 로그인된 alias도 선택지에 포함 (재로그인용). 옵션 4개 넘으면 미로그인 alias 우선, "기본 계정"·취소는 항상 포함.
 
 선택 결과:
 - alias → Step 2로
+- 기본 계정(claude) 로그인 → **Step 1a (2차 확인)**
 - 취소 → 종료
+
+### Step 1a. 기본 계정 2차 확인
+
+`AskUserQuestion`:
+```
+질문: 기본 계정에 로그인하면 평소 사용 계정이 바뀔 수 있습니다. 진행할까요?
+옵션:
+  - 예, 기본 계정(~/.claude)에 로그인
+  - 아니오 (취소)
+```
+
+확인 시 CONFIG_DIR = `$HOME/.claude` 로 Step 2 진행.
 
 ### Step 2. CONFIG_DIR 결정
 

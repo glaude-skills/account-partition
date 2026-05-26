@@ -30,15 +30,18 @@ SCRIPTS="$SKILL_DIR/scripts"
 
 ### Step 1. 계정 선택
 
-스킬 관리 계정만:
+> **default 계정 보호 정책**: default `~/.claude` (`claude` 명령어) 는 edit 대상에서 **완전 제외**. 공유 항목 조작은 다른 alias에 전파될 수 있어 기본 계정 노출 금지.
+
+스킬 관리 계정만 (default `~/.claude` 제외):
 ```bash
 bash "$SCRIPTS/shell-rc.sh" list ~/.zshrc | grep ":managed$" | cut -d: -f1
+# 결과에서 이름이 없는 default 항목이 있으면 제외
 ```
 
 `AskUserQuestion`:
 ```
 질문: 어떤 계정을 수정할까요?
-옵션: [위 명령 결과 각각]
+옵션: [위 명령 결과 각각 — default claude 제외]
 ```
 
 외부 alias도 표시(`:external` suffix)되면 선택 시 안내:
