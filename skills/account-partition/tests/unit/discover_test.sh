@@ -71,4 +71,10 @@ meta=$(bash "$SCRIPTS/discover.sh" meta "$sb/.claude-meta-test")
 assert_contains "$meta" "meta@example.com" "meta JSON에 email 포함"
 assert_contains "$meta" "claude-meta-test" "meta JSON에 alias 이름 포함"
 
+if [[ "$out" == *".claude-side.removed"* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL + 1)); ASSERT_FAILURES+=(".tar.gz 백업이 list-dirs에 포함됨"); echo "  ✗ .tar.gz 백업 잘못 포함"
+else
+  ASSERT_PASS=$((ASSERT_PASS + 1)); echo "  ✓ .tar.gz 백업 제외 OK"
+fi
+
 print_summary

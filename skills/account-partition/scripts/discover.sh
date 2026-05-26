@@ -14,6 +14,15 @@ set -uo pipefail
 HOME="${HOME:?HOME is required}"
 SHARED_POOL="${SHARED_POOL:-$HOME/.claude-shared}"
 
+# SHARED_POOL 정규화 (symlink·상대경로 처리)
+_SP_DIR=$(dirname "$SHARED_POOL")
+_SP_BASE=$(basename "$SHARED_POOL")
+if [[ -d "$_SP_DIR" ]]; then
+  SHARED_POOL_NORM="$(cd "$_SP_DIR" && pwd)/$_SP_BASE"
+else
+  SHARED_POOL_NORM="$SHARED_POOL"
+fi
+
 is_account_candidate() {
   local dir="$1"
   # default ~/.claude is always a candidate if it's a directory (design §13)
@@ -24,15 +33,11 @@ is_account_candidate() {
   return 1
 }
 
-list_dirs() {
-  local exclude_pool
-  exclude_pool=$(cd "$(dirname "$SHARED_POOL")" 2>/dev/null && pwd)/$(basename "$SHARED_POOL")
-
+list_dirs() (
   shopt -s nullglob dotglob 2>/dev/null
   for entry in "$HOME"/.claude "$HOME"/.claude-*; do
     [[ -d "$entry" ]] || continue
-    [[ "$entry" == "$SHARED_POOL" ]] && continue
-    [[ "$entry" == "$exclude_pool" ]] && continue
+    [[ "$entry" == "$SHARED_POOL" || "$entry" == "$SHARED_POOL_NORM" ]] && continue
     [[ "$entry" == *.tar.gz ]] && continue
     [[ "$entry" == *.bak.* ]] && continue
     [[ "$entry" == *.removed.* ]] && continue
@@ -41,30 +46,31 @@ list_dirs() {
       echo "$entry"
     fi
   done
-}
+)
 
-list_ignored() {
+list_ignored() (
   shopt -s nullglob dotglob 2>/dev/null
   for entry in "$HOME"/.claude-*; do
     [[ -d "$entry" ]] || continue
-    [[ "$entry" == "$SHARED_POOL" ]] && continue
+    [[ "$entry" == "$SHARED_POOL" || "$entry" == "$SHARED_POOL_NORM" ]] && continue
     [[ "$entry" == *.bak.* ]] && continue
     [[ "$entry" == *.removed.* ]] && continue
     if ! is_account_candidate "$entry"; then
       echo "$entry"
     fi
   done
-}
+)
 
 meta_for_dir() {
   local dir="$1"
   local email=""
 
   if [[ -f "$dir/.claude.json" ]]; then
-    email=$(python3 -c "
-import json
+    email=$(CLAUDE_JSON_PATH="$dir/.claude.json" python3 -c "
+import json, os, sys
 try:
-    d = json.load(open('$dir/.claude.json'))
+    with open(os.environ['CLAUDE_JSON_PATH']) as f:
+        d = json.load(f)
     print(d.get('oauthAccount', {}).get('emailAddress', ''))
 except Exception:
     pass
@@ -79,12 +85,12 @@ except Exception:
     name="${name#.}"
   fi
 
-  python3 -c "
-import json
+  AP_DIR="$dir" AP_ALIAS="$name" AP_EMAIL="$email" python3 -c "
+import json, os
 print(json.dumps({
-  'dir': '$dir',
-  'alias': '$name',
-  'email': '$email',
+  'dir':   os.environ['AP_DIR'],
+  'alias': os.environ['AP_ALIAS'],
+  'email': os.environ['AP_EMAIL'],
 }))
 "
 }
@@ -93,7 +99,7 @@ cmd="${1:-help}"
 case "$cmd" in
   list-dirs)    list_dirs ;;
   list-ignored) list_ignored ;;
-  meta)         meta_for_dir "$2" ;;
+  meta)         meta_for_dir "${2:?Usage: $0 meta <dir>}" ;;
   *)
     echo "Usage: $0 {list-dirs|list-ignored|meta <dir>}" >&2
     exit 1
