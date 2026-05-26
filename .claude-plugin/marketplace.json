@@ -8,7 +8,7 @@
     {
       "name": "account-partition",
       "description": "Manage multiple Claude CLI OAuth accounts via CLAUDE_CONFIG_DIR aliases. v0.4: unlink fully automated.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "source": "./",
       "author": {
         "name": "gang00"

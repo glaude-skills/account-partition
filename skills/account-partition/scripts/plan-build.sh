@@ -76,8 +76,10 @@ shell_mode = os.environ["SHELL_MODE"]
 
 ops = []
 
+# auth_logout은 shell-mode와 무관하게 항상 포함 (OAuth 정리는 idempotent·안전)
+ops.append({"op": "auth_logout", "config_dir": config_dir})
+
 if shell_mode == "auto":
-    ops.append({"op": "auth_logout", "config_dir": config_dir})
     ops.append({
         "op": "remove_block",
         "file": shell_rc,
