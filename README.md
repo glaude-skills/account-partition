@@ -16,16 +16,20 @@
 
 ## 사용
 
+메뉴에서 선택:
+
 ```
 /account-partition
 ```
 
-메인 메뉴에서 다음 중 하나 선택:
+또는 액션 직접 호출:
 
-- **계정 추가 연동** — 새 alias 생성 + 공유 항목 선택 + 셸 통합
-- **계정 조회** — 등록된 alias의 공유/격리 매트릭스 + 백업 현황
-- **계정의 공유 항목 수정** — 기존 alias의 공유 ↔ 격리 토글
-- **계정 연동 해제** — v1 미지원 (수동 명령 출력만)
+```
+/account-partition:add      # 계정 추가 연동
+/account-partition:list     # 계정 조회 (공유/격리 매트릭스)
+/account-partition:edit     # 공유 항목 수정
+/account-partition:unlink   # 연동 해제 — v1 미지원, 안내만
+```
 
 ## UX 원칙
 
