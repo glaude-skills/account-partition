@@ -20,9 +20,11 @@ SCRIPTS="$SKILL_DIR/scripts"
 
 ## 흐름
 
-### Step 1. 계정 선택
+### Step 1. 계정 선택 (반드시 객관식 먼저)
 
-로그인된 alias만 표시 (logout할 가치 있는 것만):
+다른 동작 전에 로그인된 alias 목록을 **객관식으로 먼저 보여주고** 사용자 선택을 받아야 한다. 임의 진행 금지.
+
+**선택지 수집** — `claude auth status`가 `loggedIn=true` 인 alias만:
 
 ```bash
 for d in $(HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" bash "$SCRIPTS/discover.sh" list-dirs); do
@@ -36,7 +38,18 @@ for d in $(HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" bash "$SCRIPTS/discov
 done
 ```
 
-선택지 없으면 "로그인된 계정 없음" 안내.
+선택지가 0개면 "로그인된 계정 없음" 안내 후 종료.
+
+**`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
+
+- 각 로그인된 alias: 라벨 `claude-<name>`, description은 `✓ <email> — 로그아웃 시 keychain·oauthAccount 자동 정리`
+- 마지막은 항상 **"취소"** (description "로그아웃 안 함, 종료")
+
+옵션 4개 넘으면 가나다 또는 등록 순으로 처음 3개, 취소는 항상 포함.
+
+선택 결과:
+- alias → Step 2 (한 번 더 확인)
+- 취소 → 종료
 
 ### Step 2. 확인 객관식
 

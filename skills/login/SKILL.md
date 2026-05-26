@@ -20,9 +20,11 @@ SCRIPTS="$SKILL_DIR/scripts"
 
 ## 흐름
 
-### Step 1. 계정 선택
+### Step 1. 계정 선택 (반드시 객관식 먼저)
 
-스킬·외부 alias 모두 목록화. 각 alias의 현재 로그인 상태도 옆에 표시:
+다른 동작 전에 alias 목록을 **객관식으로 먼저 보여주고** 사용자 선택을 받아야 한다. 임의 진행 금지.
+
+**선택지 수집** — 모든 등록된 alias + 현재 로그인 상태:
 
 ```bash
 for d in $(HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" bash "$SCRIPTS/discover.sh" list-dirs); do
@@ -39,7 +41,16 @@ except: print('— (확인 실패)')
 done
 ```
 
-`AskUserQuestion` 선택지: 위 목록의 alias들. 이미 로그인된 alias도 표시(재로그인용).
+**`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
+
+- 각 alias: 라벨 `claude-<name>` (또는 default는 `claude (기본)`), description은 위 status 결과 (`✓ <email>` 또는 `— (로그인 안 됨)`)
+- 마지막은 항상 **"취소"** (description "로그인 안 함, 종료")
+
+이미 로그인된 alias도 선택지에 포함 (재로그인용). 옵션 4개 넘으면 미로그인 alias 우선, 취소는 항상 포함.
+
+선택 결과:
+- alias → Step 2로
+- 취소 → 종료
 
 ### Step 2. CONFIG_DIR 결정
 
