@@ -5,8 +5,8 @@
   "author": {
     "name": "gang00"
   },
-  "homepage": "https://github.com/GGGGGANG/account-partition",
-  "repository": "https://github.com/GGGGGANG/account-partition",
+  "homepage": "https://github.com/glaude-skills/account-partition",
+  "repository": "https://github.com/glaude-skills/account-partition",
   "license": "MIT",
   "keywords": ["claude", "cli", "accounts", "aliases", "macos"]
 }
