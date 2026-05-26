@@ -2,7 +2,7 @@
 
 여러 Claude CLI OAuth 계정을 한 머신에서 `CLAUDE_CONFIG_DIR` alias(예: `claude-work`, `claude-personal`)로 분리하고, 계정 사이의 공유/격리 항목을 사용자가 선택할 수 있게 해주는 Claude Code plugin.
 
-**상태**: v0.3 — 계정 추가 연동 / 계정 조회 / 계정의 공유 항목 수정 / OAuth 로그인·로그아웃 자동화 지원. 계정 연동 해제와 외부 alias 자동 수정은 v2로 이연.
+**상태**: v0.4 — 계정 추가 연동 / 계정 조회 / 계정의 공유 항목 수정 / OAuth 로그인·로그아웃 / **계정 연동 해제(unlink) 자동화** 지원. 외부 alias 자동 수정은 후속으로 이연.
 **플랫폼**: macOS + zsh (1차)
 
 ## 설치
@@ -30,7 +30,7 @@
 /account-partition:edit         # 공유 항목 수정
 /account-partition:login        # OAuth 로그인 (v0.3+)
 /account-partition:logout       # OAuth 로그아웃 (v0.3+)
-/account-partition:unlink       # 연동 해제 — v1 미지원, 안내만
+/account-partition:unlink       # 연동 해제 — v0.4부터 자동화
 ```
 
 ## UX 원칙

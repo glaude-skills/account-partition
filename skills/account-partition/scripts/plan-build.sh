@@ -62,6 +62,50 @@ print(json.dumps(plan, ensure_ascii=False, indent=2))
 PYEOF
 }
 
+build_unlink() {
+  local name="$1" config_dir="$2" shell_rc="$3" shell_mode="$4"
+
+  NAME="$name" CONFIG_DIR="$config_dir" \
+  SHELL_RC="$shell_rc" SHELL_MODE="$shell_mode" \
+  python3 <<'PYEOF'
+import json, os
+name = os.environ["NAME"]
+config_dir = os.environ["CONFIG_DIR"]
+shell_rc = os.environ["SHELL_RC"]
+shell_mode = os.environ["SHELL_MODE"]
+
+ops = []
+
+if shell_mode == "auto":
+    ops.append({"op": "auth_logout", "config_dir": config_dir})
+    ops.append({
+        "op": "remove_block",
+        "file": shell_rc,
+        "marker": f"# account-partition: {name}",
+    })
+
+ops.append({
+    "op": "archive_dir",
+    "src": config_dir,
+    "remove_after": True,
+})
+
+plan = {
+    "metadata": {
+        "action": "unlink",
+        "alias_name": name,
+        "config_dir": config_dir,
+        "shell_mode": shell_mode,
+    },
+    "preconditions": [
+        {"check": "no_active_session", "config_dir": config_dir},
+    ],
+    "operations": ops,
+}
+print(json.dumps(plan, ensure_ascii=False, indent=2))
+PYEOF
+}
+
 build_edit() {
   local name="$1" config_dir="$2" shared_pool="$3"
   local add_shared="$4" remove_shared="$5"
@@ -153,8 +197,15 @@ case "$cmd" in
     build_edit "$opt_name" "$opt_config_dir" "$opt_shared_pool" \
                "$opt_add_shared" "$opt_remove_shared"
     ;;
+  unlink)
+    [[ -n "$opt_name" ]]        || { echo "--name required" >&2; exit 1; }
+    [[ -n "$opt_config_dir" ]]  || { echo "--config-dir required" >&2; exit 1; }
+    [[ -n "$opt_shell_rc" ]]    || { echo "--shell-rc required" >&2; exit 1; }
+    [[ -n "$opt_shell_mode" ]]  || { echo "--shell-mode required" >&2; exit 1; }
+    build_unlink "$opt_name" "$opt_config_dir" "$opt_shell_rc" "$opt_shell_mode"
+    ;;
   *)
-    echo "Usage: $0 {add|edit} [--name ...] [--config-dir ...] [--shared-pool ...] [...]" >&2
+    echo "Usage: $0 {add|edit|unlink} [--name ...] [--config-dir ...] [--shared-pool ...] [...]" >&2
     exit 1
     ;;
 esac

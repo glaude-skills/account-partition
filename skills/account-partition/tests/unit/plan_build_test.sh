@@ -64,4 +64,35 @@ assert_contains "$plan_e" "CLAUDE.md" "CLAUDE.md path"
 assert_contains "$plan_e" "remove_symlink" "remove-shared → remove_symlink"
 assert_contains "$plan_e" '"op": "copy"' "remove-shared → copy"
 
+# Unlink: shell-mode=auto → auth_logout + remove_block + archive_dir
+plan_u=$(bash "$SCRIPTS/plan-build.sh" unlink \
+  --name test \
+  --config-dir /tmp/.claude-test \
+  --shell-rc /tmp/.zshrc \
+  --shell-mode auto)
+
+assert_contains "$plan_u" '"action": "unlink"' "action=unlink"
+assert_contains "$plan_u" '"op": "auth_logout"' "auth_logout op"
+assert_contains "$plan_u" '"op": "remove_block"' "remove_block op"
+assert_contains "$plan_u" '"op": "archive_dir"' "archive_dir op"
+
+# Unlink: manual 모드 → auth_logout·remove_block 없고 archive_dir만
+plan_u2=$(bash "$SCRIPTS/plan-build.sh" unlink \
+  --name test2 \
+  --config-dir /tmp/.claude-test2 \
+  --shell-rc /tmp/.zshrc \
+  --shell-mode manual)
+
+if [[ "$plan_u2" == *'"op": "auth_logout"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("manual 모드에 auth_logout 포함"); echo "  ✗ manual 모드에 auth_logout 포함"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ manual: auth_logout 없음"
+fi
+if [[ "$plan_u2" == *'"op": "remove_block"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("manual 모드에 remove_block 포함"); echo "  ✗ manual 모드에 remove_block 포함"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ manual: remove_block 없음"
+fi
+assert_contains "$plan_u2" '"op": "archive_dir"' "manual에도 archive_dir은 있음"
+
 print_summary

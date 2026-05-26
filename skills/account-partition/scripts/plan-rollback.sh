@@ -87,6 +87,21 @@ for i in reversed(completed):
                         print(f"  [{i}] rollback append_block (fallback): removed marker from {op['file']}")
         elif kind == "quarantine":
             print(f"  [{i}] rollback quarantine: 자동 복원 미지원, 수동 확인 필요 (quarantine 디렉토리 참조)", file=sys.stderr)
+        elif kind == "auth_logout":
+            print(f"  [{i}] rollback auth_logout: 자동 복원 불가 — 필요 시 'claude auth login' 수동 실행", file=sys.stderr)
+        elif kind == "remove_block":
+            print(f"  [{i}] rollback remove_block: 자동 복원 불가 — ~/.zshrc 백업에서 수동 복구", file=sys.stderr)
+        elif kind == "archive_dir":
+            import glob
+            src = op["src"]
+            archives = sorted(glob.glob(f"{src}.removed.*.tar.gz"), key=os.path.getmtime, reverse=True)
+            if archives:
+                latest = archives[0]
+                parent = os.path.dirname(src) or "."
+                subprocess.run(["tar", "xzf", latest, "-C", parent], check=False)
+                print(f"  [{i}] rollback archive_dir: {latest} → {src} 복원")
+            else:
+                print(f"  [{i}] rollback archive_dir: archive 파일 없음 — 수동 확인 필요", file=sys.stderr)
         else:
             print(f"  [{i}] unknown op for rollback: {kind}", file=sys.stderr)
     except Exception as e:

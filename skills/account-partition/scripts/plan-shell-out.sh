@@ -56,6 +56,23 @@ for op in ops:
         print(f"mkdir -p {sh(q_dir)}")
         name = op['path'].rsplit('/', 1)[-1]
         print(f"mv {sh(op['path'])} {sh(q_dir + '/' + name + '.$(date +%Y%m%d-%H%M%S)-$$')}")
+    elif kind == "auth_logout":
+        cfg = op["config_dir"]
+        print(f"CLAUDE_CONFIG_DIR={sh(cfg)} claude auth logout")
+    elif kind == "remove_block":
+        marker = op.get("marker", "")
+        name = marker.split(":", 1)[1].strip() if ":" in marker else ""
+        f = op.get("file", "")
+        print(f"# marker '{marker}' 블록 제거 ({f})")
+        print(f"bash \"$SCRIPTS/shell-rc.sh\" remove {sh(f)} {sh(name)}")
+    elif kind == "archive_dir":
+        src = op["src"]
+        parent = os.path.dirname(src) or "."
+        base = os.path.basename(src)
+        dest_pat = src + ".removed.$(date +%Y%m%d-%H%M%S)-$$.tar.gz"
+        print(f"tar czf {sh(dest_pat)} -C {sh(parent)} {sh(base)}")
+        if op.get("remove_after"):
+            print(f"rm -rf {sh(src)}")
     else:
         print(f"# (unknown op: {kind})")
 PYEOF

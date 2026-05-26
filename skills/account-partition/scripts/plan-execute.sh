@@ -118,6 +118,56 @@ try:
             dst = os.path.join(q, f"{name}.{unique_ts()}")
             subprocess.run(["mv", op["path"], dst], check=True)
 
+        elif kind == "auth_logout":
+            cfg = op["config_dir"]
+            env = {**os.environ, "CLAUDE_CONFIG_DIR": cfg}
+            subprocess.run(
+                ["claude", "auth", "logout"],
+                env=env,
+                check=False,
+            )
+
+        elif kind == "remove_block":
+            marker = op.get("marker", "")
+            if marker.startswith("# account-partition:"):
+                name = marker.split(":", 1)[1].strip()
+                shell_rc_script = os.path.join(scripts_dir, "shell-rc.sh")
+                if os.path.isfile(shell_rc_script):
+                    subprocess.run(
+                        ["bash", shell_rc_script, "remove", op["file"], name],
+                        check=False,
+                    )
+                else:
+                    # fallback: marker + 다음 라인 직접 제거
+                    f_path = op["file"]
+                    if os.path.exists(f_path):
+                        with open(f_path) as fh:
+                            lines = fh.readlines()
+                        new_lines = []
+                        skip = False
+                        for ln in lines:
+                            if skip:
+                                skip = False
+                                continue
+                            if ln.strip() == marker:
+                                skip = True
+                                continue
+                            new_lines.append(ln)
+                        with open(f_path, "w") as fh:
+                            fh.writelines(new_lines)
+
+        elif kind == "archive_dir":
+            src = op["src"]
+            if not os.path.isdir(src):
+                raise FileNotFoundError(f"archive_dir source missing: {src}")
+            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
+            dest = f"{src}.removed.{ts}.tar.gz"
+            parent = os.path.dirname(src) or "."
+            base = os.path.basename(src)
+            subprocess.run(["tar", "czf", dest, "-C", parent, base], check=True)
+            if op.get("remove_after"):
+                subprocess.run(["rm", "-rf", src], check=True)
+
         else:
             raise RuntimeError(f"unknown op: {kind}")
 

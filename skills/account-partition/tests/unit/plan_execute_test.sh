@@ -77,4 +77,36 @@ else
   ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 실패 후 상태 파일 없음"
 fi
 
+# 시나리오 3: archive_dir — dir 생성 → archive → 원본 사라짐
+sb3=$(make_sandbox)
+trap 'cleanup_sandbox "$sb"; cleanup_sandbox "$sb2"; cleanup_sandbox "$sb3"' EXIT
+
+mkdir -p "$sb3/.claude-arch"
+echo "data" > "$sb3/.claude-arch/file.txt"
+
+plan_arch=$(cat <<JSON
+{
+  "metadata": {"action":"unlink","alias_name":"arch","config_dir":"$sb3/.claude-arch"},
+  "operations": [{"op":"archive_dir","src":"$sb3/.claude-arch","remove_after":true}]
+}
+JSON
+)
+
+echo "$plan_arch" | PLAN_DIR="$sb3" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-execute.sh"
+
+if [[ -d "$sb3/.claude-arch" ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive 후 원본 잔존"); echo "  ✗ archive 후 원본 잔존"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive 후 원본 제거됨"
+fi
+
+shopt -s nullglob
+archives=("$sb3/.claude-arch.removed."*.tar.gz)
+if [[ ${#archives[@]} -gt 0 ]]; then
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ archive 파일 생성됨"
+else
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("archive 파일 없음"); echo "  ✗ archive 파일 없음"
+fi
+shopt -u nullglob
+
 print_summary

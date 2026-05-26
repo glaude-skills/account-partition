@@ -24,6 +24,7 @@ action_label = {
   "add": "계정 추가",
   "edit": "공유 항목 수정",
   "delete": "계정 연동 해제",
+  "unlink": "연동 해제",
 }.get(md.get("action", ""), md.get("action", "?"))
 
 alias = md.get("alias_name", "?")
@@ -68,6 +69,13 @@ for op in ops:
       print(f"             {line}")
   elif kind == "quarantine":
     print(f"  격리 보존  {op['path']} (충돌 사본을 quarantine 디렉토리로 이동)")
+  elif kind == "auth_logout":
+    print(f"  로그아웃   {op['config_dir']} (claude auth logout)")
+  elif kind == "remove_block":
+    print(f"  제거       {op['file']} 에서 marker '{op['marker']}' 블록 제거")
+  elif kind == "archive_dir":
+    remove_note = " + 원본 제거" if op.get("remove_after") else ""
+    print(f"  아카이브   {op['src']} → <src>.removed.<ts>.tar.gz{remove_note}")
   else:
     print(f"  ?          {kind}: {op}")
 
