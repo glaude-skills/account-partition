@@ -35,7 +35,22 @@ echo "---"
 
 assert_contains "$out" ".claude-work" "발견: .claude-work"
 assert_contains "$out" ".claude-personal" "발견: .claude-personal"
-assert_contains "$out" "/.claude" ".claude (default) 포함 — 끝에 -없는 경로"
+
+# default ~/.claude — .claude.json 없어도 special case로 포함되어야 함 (design §13)
+# (위에서 mkdir -p "$sb/.claude" 만 하고 .claude.json 미생성)
+default_included=false
+while IFS= read -r line; do
+  if [[ "$line" == "$sb/.claude" ]]; then
+    default_included=true
+    break
+  fi
+done <<< "$out"
+
+if $default_included; then
+  ASSERT_PASS=$((ASSERT_PASS + 1)); echo "  ✓ default ~/.claude special-case 포함 OK"
+else
+  ASSERT_FAIL=$((ASSERT_FAIL + 1)); ASSERT_FAILURES+=("default ~/.claude 미포함"); echo "  ✗ default ~/.claude 미포함 — special case 누락"
+fi
 
 # 제외 검증
 if [[ "$out" == *".claude-shared"* ]]; then

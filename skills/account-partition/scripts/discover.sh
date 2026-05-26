@@ -16,6 +16,10 @@ SHARED_POOL="${SHARED_POOL:-$HOME/.claude-shared}"
 
 is_account_candidate() {
   local dir="$1"
+  # default ~/.claude is always a candidate if it's a directory (design §13)
+  if [[ "$dir" == "$HOME/.claude" ]]; then
+    return 0
+  fi
   [[ -f "$dir/.claude.json" ]] && return 0
   return 1
 }
