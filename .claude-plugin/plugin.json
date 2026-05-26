@@ -1,0 +1,12 @@
+{
+  "name": "account-partition",
+  "description": "Manage multiple Claude CLI OAuth accounts via CLAUDE_CONFIG_DIR aliases. v1: add, list, modify shared items.",
+  "version": "0.1.0",
+  "author": {
+    "name": "gang00"
+  },
+  "homepage": "https://github.com/GGGGGANG/account-partition",
+  "repository": "https://github.com/GGGGGANG/account-partition",
+  "license": "MIT",
+  "keywords": ["claude", "cli", "accounts", "aliases", "macos"]
+}
