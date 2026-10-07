@@ -94,3 +94,15 @@ v1에서 **keychain entry → config dir 매핑은 시도하지 않음**. 대신
 - **이미 손으로 나눈 계정이 있다.** PowerShell 프로필의 `claude-work`, `claude-dami` 함수가 `CLAUDE_CONFIG_DIR`을 바꿔 `claude`를 부른다. 두 계정 모두 `skills`, `plugins`, `commands`를 `~/.claude`로 향하는 junction으로 공유하고 `settings.json`은 따로 둔다.
 - **그 함수들은 환경변수를 되돌리지 않는다.** `claude-work`를 한 번 실행한 PowerShell 창에서는 이후 그냥 `claude`를 쳐도 work 계정으로 뜬다.
 - **plugins 공유와 settings 격리가 어긋나는 사고를 실제로 겪었다.** 마켓플레이스 저장소를 옮긴 뒤 `plugins/known_marketplaces.json`(공유)은 새 주소가 됐는데 `settings.json`의 `extraKnownMarketplaces`(계정별)는 옛 주소로 남아, 그 계정에서 플러그인이 "added but ignored"로 꺼졌다.
+
+적대적 리뷰 후 추가로 재현한 것 (디자인 §21.8):
+
+| 확인 | 결과 |
+|---|---|
+| 실행 엔진의 `python3` | WindowsApps 경로의 네이티브 Python 3.12, `sys.platform == "win32"`. `os.path.abspath('/c/Users/gang')` = `C:\c\Users\gang` |
+| Python의 junction 판정 | `os.path.islink` = False, `os.path.isjunction` = True. bash의 `[ -L ]`, `[ -h ]`는 true |
+| Python `open()` 기본 인코딩 | cp949 |
+| MSYS `rm -rf <dir>` (안에 junction) | 대상 보존 |
+| MSYS `rm -rf <junction>` | junction만 제거, 대상 보존 |
+| MSYS `rm -rf <junction>/` (끝에 `/`) | **대상 내용 전부 삭제** |
+| PowerShell ExecutionPolicy | CurrentUser = RemoteSigned (이 PC). 클라이언트 기본값 Restricted면 프로필이 로드되지 않는다 |

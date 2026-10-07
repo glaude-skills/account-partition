@@ -27,7 +27,7 @@ Claude Code는 `CLAUDE_CONFIG_DIR` 환경변수로 설정 디렉토리를 통째
 ### v1 비목표 (v2 또는 후속으로 이연)
 - **계정 연동 해제(unlink)** — v0.4에서 자동화 완료. `claude auth logout` + zshrc 블록 제거 + config dir 아카이브·삭제를 operation plan으로 통합.
 - **외부(스킬 외부에서 만든) alias의 자동 수정** — 손으로 만든 alias·함수형·다중 라인 케이스의 안전한 수정이 어려움. v1은 외부 alias를 **조회·인식까지만**, 수정은 사용자에게 수동 안내만
-- macOS 외 OS 지원 (1차는 macOS + zsh. bash·fish는 수동 안내 fallback)
+- macOS 외 OS 지원 (1차는 macOS + zsh. bash·fish는 수동 안내 fallback). **Windows는 v0.5에서 지원하며 §21이 우선한다**
 - 여러 머신 사이의 설정 동기화
 - 임의 alias 그룹 사이의 부분 공유 (모든 alias가 단일 공유 풀 공유)
 - Claude API key, custom endpoint 같은 비-OAuth 인증 관리
@@ -283,6 +283,7 @@ v1의 keychain 관련 작업은 모두 **수동 명령 출력**: `security delet
 ## 12. 셸 통합
 
 ### 지원 셸
+- Windows의 셸 통합(PowerShell 프로필)은 §21.3·§21.8이 정한다. 이 절의 `~/.zshrc` 표기는 macOS 기준이다
 - 1차: zsh (`~/.zshrc`)
 - 감지: `$SHELL` 환경변수 확인
 - bash, fish, 그 외: v1은 자동 추가 미지원, 명령만 출력해 수동 안내
@@ -554,7 +555,7 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 - **외부 alias 자동 수정** — 손으로 만든 alias의 안전한 파싱·교체 방법론 정립 후
 - **bash·fish 자동 통합**
 - **Linux 지원** — libsecret/gnome-keyring 대안
-- **Windows 지원** (별도 큰 작업)
+- **Windows 지원**: v0.5로 진행 중. §21
 - **공유 보관소 위치 변경 마이그레이션**
 - **미사용 백업 자동 정리** (사용자 확인 후 일괄 삭제)
 - **자동화 테스트 도입**
@@ -610,6 +611,8 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 | D4 | 파일(`CLAUDE.md`) 공유는 **개발자 모드가 켜져 있으면 symlink, 꺼져 있으면 공유하지 않는다**. 켜는 법을 안내하고 조회에 "공유 안 됨"으로 표시한다 | 2026-10-07 사용자 결정. 하드링크는 편집기 저장 방식에 따라 조용히 끊기고, 복사는 계정 사이 내용이 어긋난다 |
 | D5 | **처음에 OS 등 환경을 먼저 확인하고 그에 맞게 동작한다** (§21.1) | 2026-10-07 사용자 결정 |
 
+**§21은 Windows에서 앞 절(§7, §9, §11, §12, §13, §15)보다 우선한다.** 앞 절이 macOS 기준으로 적은 경로·명령·셸은 Windows에서는 §21을 따른다.
+
 사전 검증 결과는 `tests/preconditions.md` 검증 3. 요약하면 전제 1, 3, 4는 성립했고 **전제 2(`ln -s`)는 불성립**이다. Git Bash의 `ln -s`는 오류 없이 복사본을 만든다. 이 사실이 아래 설계를 가장 많이 바꿨다.
 
 #### 21.1 환경 확인 단계 (모든 sub-skill의 첫 단계)
@@ -625,6 +628,9 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
    | 디렉토리 링크 수단 | symlink | junction |
    | 파일 링크 수단 | symlink | 개발자 모드 켜짐 → symlink, 꺼짐 → 없음 |
    | 기존 수동 셋업 | `~/.zshrc`의 `CLAUDE_CONFIG_DIR` alias | PowerShell 프로필의 `CLAUDE_CONFIG_DIR` 함수 |
+   | 프로필 경로 | - | 고정 경로를 쓰지 않고 `powershell -NoProfile -Command '$PROFILE'`로 얻는다 (OneDrive 폴더 리디렉션 대응) |
+   | 프로필 로드 가능 여부 | - | `Get-ExecutionPolicy`가 `Restricted`면 함수가 로드되지 않는다. 확인 화면에 표시하고 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 안내 |
+   | 실행 엔진 | python3 | `python3`가 실제 인터프리터인지(Microsoft Store 스텁이 아닌지) 확인. 아니면 진행하지 않고 설치 안내 |
 
 2. **확인** (`AskUserQuestion`, 1회)
 
@@ -640,7 +646,9 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 
    셸 통합 대상 후보가 하나뿐이면 둘째 줄 이후 선택지는 감지 결과에 따라 줄인다.
 
-3. **저장**: 확인된 값을 `~/.account-partition-env.json`에 남긴다. 다음 호출은 다시 감지해서 저장값과 같으면 묻지 않고, 달라졌으면(개발자 모드가 켜짐, pwsh 설치 등) 바뀐 항목만 보여 주고 다시 확인받는다.
+3. **저장**: `~/.account-partition-env.json`에 **감지 스냅샷**과 **사용자 선택**을 따로 남긴다. 다음 호출은 다시 감지해 **스냅샷**과만 비교한다. 같으면 묻지 않고, 달라졌으면(개발자 모드가 켜짐, pwsh 설치 등) 바뀐 항목만 보여 주고 다시 확인받는다. 사용자 선택(예: 5.1 대신 pwsh)을 감지값과 비교하면 매번 다시 묻게 되므로 비교 대상이 아니다.
+
+   계정마다 셸 블록이 들어 있는 파일 경로도 여기에 기록한다. 셸 통합 대상을 바꿔도(5.1 → 7) unlink가 옛 프로필의 블록을 찾아 지울 수 있게 하기 위해서다.
 
 macOS에서도 같은 단계를 돈다. 감지 결과가 기존 동작(zsh, symlink)과 같으므로 사용자 입장에서는 확인 한 번이 늘어날 뿐이다.
 
@@ -656,8 +664,11 @@ ap_link_dir()        # macOS: ln -s / Windows: cmd //c mklink /J. 만든 뒤 ap_
 ap_link_file()       # macOS: ln -s / Windows+개발자모드: MSYS=winsymlinks:nativestrict ln -s / 그 외: 실패(호출하지 않음)
 ap_is_link()         # macOS: [ -L ] / Windows: fsutil reparsepoint query 의 태그가 0xa0000003 또는 0xa000000c
 ap_alias_block()     # zsh alias 또는 PowerShell 함수 블록 문자열
-ap_check_active()    # macOS: pgrep / Windows: tasklist 의 claude.exe + 대상 config dir 대조
+ap_unlink()          # 링크만 제거하고 대상은 보존. Windows junction 은 cmd //c rmdir, symlink 는 rm (끝 / 제거 후)
+ap_check_active()    # §21.8 활성 세션 게이트 참조
 ```
+
+plan op `create_symlink`는 `create_link {kind: dir|file}`로 바꾼다. 실행 엔진(Python)은 링크를 직접 만들지 않고 `platform.sh`의 `ap_link_dir`/`ap_link_file`을 호출한다. 링크 판정과 제거도 같은 방식으로 `ap_is_link`/`ap_unlink`를 거친다(§21.8).
 
 **Windows에서 `ln -s`를 직접 부르는 코드를 두지 않는다.** 복사본이 생겨도 성공으로 끝나기 때문이다. 링크를 만든 모든 경로는 직후에 `ap_is_link`로 검사하고, 링크가 아니면 그 단계를 실패로 처리해 롤백한다(§11).
 
@@ -690,7 +701,7 @@ function claude-<name> {
 # /account-partition: <name>
 ```
 
-블록을 시작·끝 주석으로 감싸 `remove_block`(v0.4)이 여러 줄 함수를 통째로 지울 수 있게 한다. 기존 zsh 블록 규칙(§12, 스킬이 만든 블록만 자동 편집)은 그대로다.
+블록을 시작·끝 주석으로 감싼다. **지금의 `shell-rc.sh` 파서와 `remove_block` fallback은 "마커 다음 한 줄" 2줄 블록만 알아서, 이 블록을 그대로 두면 마커만 지워지고 함수 본문이 남는다.** 그래서 시작·끝 마커 사이를 통째로 다루는 파서를 새로 둔다. 끝 마커가 없으면 지우지 않고 중단해 수동 안내로 넘긴다. 기존 zsh 블록 규칙(§12, 스킬이 만든 블록만 자동 편집)은 그대로다.
 
 #### 21.4 외부 계정 인식 (Windows)
 
@@ -709,7 +720,7 @@ function claude-<name> {
 
 #### 21.6 영향 범위
 
-- 새 파일: `scripts/platform.sh`, `tests/unit/platform_test.sh`
+- 새 파일: `scripts/platform.sh`, `tests/unit/platform_test.sh`, 시작·끝 마커 블록 파서(`shell-rc.sh` 안 또는 별도)
 - 분기 추가: `shell-rc.sh`(가장 큼. PowerShell 프로필 편집과 여러 줄 블록), `plan-execute.sh`(링크 생성과 검사, append_block), `plan-build.sh`(alias 형식, 파일 공유 생략), `safety.sh`(프로세스 감지), `discover.sh`(PowerShell 프로필 검색, 링크 대상 판별), `matrix.sh`(공유 안 됨 표시, 마켓플레이스 대조)
 - SKILL.md: 6개 sub-skill 첫 단계에 21.1 환경 확인. 경로·명령 표기는 OS 무관하게
 
@@ -720,10 +731,45 @@ function claude-<name> {
 - 실패 주입: Windows에서 링크가 복사본으로 생긴 상황을 흉내 내 `ap_is_link`가 실패시키고 롤백하는지
 - Windows MV 시나리오 수동 검증 (본인 환경). 기존 `claude-work`, `claude-dami` 수동 셋업이 외부 계정으로 잡히고 건드려지지 않는지 포함
 
+#### 21.8 실행 엔진, 경로, 삭제 규칙 (적대적 리뷰 반영, 2026-10-07)
+
+리뷰 지적 중 데이터 유실로 이어지는 셋은 이 PC에서 직접 재현했다.
+
+**경로 표현 계약.** 실행 엔진 `plan-execute.sh`·`plan-rollback.sh`·`matrix.sh`의 Python은 Git Bash가 아니라 **네이티브 Windows Python**(`sys.platform == "win32"`)이다. MSYS 경로 `/c/Users/gang`를 넘기면 `os.path.abspath`가 `C:\c\Users\gang`로 만든다(재현). 오류 없이 엉뚱한 위치에 쓴다.
+- plan JSON과 Python에 넘기는 모든 경로는 `cygpath -m` 형식(`C:/Users/gang/...`)으로만 담는다. `plan-build.sh`가 만들 때 변환한다.
+- `cmd //c mklink`에는 `cygpath -w` 형식을 넘기고 따옴표로 감싼다. 공백·한글 경로를 단위 테스트에 넣는다. `cmd` 출력은 cp949이므로 성공 판정은 출력 문자열이 아니라 exit code와 `ap_is_link`로 한다.
+- 계정 키는 `cygpath -m` 후 소문자로 정규화한다. PowerShell 프로필의 `$env:USERPROFILE\.claude-x`, `C:\...`, Git Bash의 `/c/...`가 같은 계정으로 묶여야 "부분 등록" 이중 표시가 생기지 않는다(§13, §21.4).
+
+**링크 판정.** Windows Python 3.12의 `os.path.islink`는 junction에 `False`를 돌려준다(재현, `os.path.isjunction`은 `True`). 지금 코드대로면 다음 일이 생긴다.
+- `remove_symlink`가 junction에서 아무것도 하지 않는다.
+- 이어지는 `copy` 단계가 공유 본 안에 중첩 사본을 만든다.
+- 롤백의 `mv backup dst`가 백업을 공유 보관소 **안으로** 옮긴다.
+
+Python 쪽 판정은 `os.path.islink(p) or os.path.isjunction(p)`로 바꾸거나 `ap_is_link`를 호출한다. 롤백 테스트에 junction 케이스를 넣는다.
+
+**삭제 규칙.** MSYS `rm -rf`로 junction이 든 디렉토리를 지우거나 junction 자체를 지우면 대상은 보존된다. 그러나 **`rm -rf <junction>/`처럼 끝에 `/`가 붙으면 대상의 내용이 전부 지워진다**(재현). 경로 문자열 하나 차이로 모든 계정의 공유 항목이 사라진다.
+- 링크일 수 있는 경로는 `rm -rf`로 지우지 않는다. 항상 `ap_unlink`를 쓴다.
+- `remove_dir`·`archive_dir` 전에 그 디렉토리 아래의 링크를 먼저 `ap_unlink`한다.
+- 삭제 함수에 넘기는 경로의 끝 `/`는 제거하고, 남아 있으면 실패시킨다.
+- tar는 링크를 링크로 복원하지 못한다(전제 2). 아카이브 복원 후 공유 항목은 링크를 다시 만드는 단계로 처리한다.
+- `tests/preconditions.md`에 "junction 제거 후 대상 보존" 검증을 끝 `/` 유무 두 경우로 남긴다.
+
+**프로필 인코딩.** Python `open()`의 기본 인코딩이 cp949다(재현). PowerShell 5.1의 `Out-File`이나 `>`로 만든 프로필은 UTF-16LE라서 그대로 읽으면 예외가 난다. 그런데 `append_block`은 그 예외를 무시하고 덧붙여 프로필을 깨뜨린다. 그러면 이후 PowerShell 창을 열 때마다 오류가 난다.
+- BOM으로 인코딩을 판정하고 원래 인코딩과 줄바꿈(CRLF)을 그대로 쓴다. 블록 내용은 ASCII만 쓴다.
+- UTF-16 프로필은 자동 편집하지 않고 수동 안내로 넘긴다.
+- 프로필 파일이 없으면 만든다. 디렉토리도 함께 만들고 UTF-8(BOM 없음), CRLF로 쓴다. 없다고 수동으로 넘기면 Windows에서는 대부분 수동이 된다.
+
+**활성 세션 게이트.** Windows의 `tasklist`·`Get-Process`로는 다른 프로세스의 환경변수를 읽을 수 없다. 그래서 "claude.exe의 `CLAUDE_CONFIG_DIR` 대조"는 구현할 수 없다. "claude.exe가 하나라도 있으면 차단"으로 바꾸면 이 스킬을 실행 중인 Claude Code 자신이 걸려 항상 차단된다.
+- 차단 기준은 대상 config dir의 lockfile과 daemon 마커로 바꾼다. daemon PID 확인은 `kill -0`이 아니라 `tasklist /FI "PID eq <pid>"`로 한다.
+- 실행 중인 claude.exe 수는 경고로만 보여 준다: "다른 Claude 창이 N개 떠 있습니다. 대상 계정을 쓰는 창이면 닫고 진행하세요."
+- 이 한계를 §11에 적는다. macOS 동작은 그대로다.
+
+**거울 프리셋(§7).** 개발자 모드가 꺼진 Windows에서는 `CLAUDE.md`가 공유되지 않는다. 프리셋 화면에서 "거울 모드(CLAUDE.md 제외: 개발자 모드 꺼짐)"로 표시해 결과가 조용히 달라지지 않게 한다.
+
 ### 새 세션이 이어받는 지점
 
 1. ~~§21 디자인 승인~~ 2026-10-07 승인 (D4, D5 추가)
-2. spec self-review → 적대적 설계 리뷰 → **사용자가 이 문서를 읽고 최종 승인**
+2. ~~spec self-review → 적대적 설계 리뷰~~ 2026-10-07 완료. 지적 12건 반영(§21.8), 그중 3건은 직접 재현 → **사용자가 이 문서를 읽고 최종 승인**
 3. → `superpowers:writing-plans`로 v0.5 구현 계획 작성
 4. → `superpowers:subagent-driven-development`로 구현
 5. 매 변경마다 version bump + push, 사용자가 `/plugin update`로 검증
