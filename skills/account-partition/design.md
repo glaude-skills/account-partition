@@ -578,7 +578,7 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 
 ---
 
-## 21. 현재 진행 상태 (새 세션 핸드오프 — 2026-05-27)
+## 21. 현재 진행 상태 (새 세션 핸드오프 — 2026-10-07 갱신)
 
 ### 완료된 버전 (main에 push됨, `glaude-skills/account-partition`)
 
@@ -598,67 +598,134 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 - **P1-4** `claude auth` 의존성 무방비 — CC 버전 변경 시 깨짐. feature-detect 필요
 - **P2** SKILL.md 템플릿 통일(add는 상세, edit는 "Add와 같은 패턴" 생략), failure-injection 테스트 확대, README Safety 섹션, CHANGELOG.md 부재
 
-### 진행 중: Windows 지원 (v0.5.0) — brainstorming 완료, 디자인 승인 대기
+### Windows 지원 (v0.5.0): 디자인 승인됨 (2026-10-07)
 
-**받은 결정 (brainstorming)**:
-1. Windows 검증 환경: 사용자 본인 Windows 있음 — 직접 MV 검증 가능
-2. 헬퍼 전략: **Git Bash 재활용** (기존 bash 헬퍼 유지, 경로·셸·symlink만 OS 분기)
-3. 공유 연결: **junction(디렉토리) + symlink(파일) 혼합** — plugins/skills/commands/agents는 junction(권한 불필요), CLAUDE.md는 symlink(개발자 모드)
+**받은 결정**
 
-**디자인 (승인 대기 — 사용자가 "OK" 안 한 상태)**:
+| # | 결정 | 근거 |
+|---|---|---|
+| D1 | 검증 환경은 사용자 본인 Windows | 2026-05 brainstorming |
+| D2 | 헬퍼는 **Git Bash 재활용**. 기존 bash 헬퍼를 두고 경로, 셸, 링크만 OS 분기 | 2026-05 brainstorming. 전제 1이 성립해 유지 |
+| D3 | 디렉토리 공유는 **junction** | 2026-05 brainstorming. 전제 3 성립 |
+| D4 | 파일(`CLAUDE.md`) 공유는 **개발자 모드가 켜져 있으면 symlink, 꺼져 있으면 공유하지 않는다**. 켜는 법을 안내하고 조회에 "공유 안 됨"으로 표시한다 | 2026-10-07 사용자 결정. 하드링크는 편집기 저장 방식에 따라 조용히 끊기고, 복사는 계정 사이 내용이 어긋난다 |
+| D5 | **처음에 OS 등 환경을 먼저 확인하고 그에 맞게 동작한다** (§21.1) | 2026-10-07 사용자 결정 |
 
-#### 21.1 플랫폼 추상화 레이어 — 새 `scripts/platform.sh`
+사전 검증 결과는 `tests/preconditions.md` 검증 3. 요약하면 전제 1, 3, 4는 성립했고 **전제 2(`ln -s`)는 불성립**이다. Git Bash의 `ln -s`는 오류 없이 복사본을 만든다. 이 사실이 아래 설계를 가장 많이 바꿨다.
 
-모든 헬퍼가 source하는 공통 모듈:
+#### 21.1 환경 확인 단계 (모든 sub-skill의 첫 단계)
+
+메뉴보다 먼저 돈다. 감지는 자동으로 하고, 결과를 사용자에게 보여 확인받는다.
+
+1. **감지** (`platform.sh detect`, 읽기 전용)
+
+   | 항목 | macOS | Windows |
+   |---|---|---|
+   | OS | `uname -s` = Darwin | `uname -s` = MINGW64_NT-* / MSYS_NT-* |
+   | 셸 통합 대상 | `$SHELL` → zsh면 `~/.zshrc` | Windows PowerShell 5.1이면 `Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`, PowerShell 7(`pwsh`)이 있으면 그 `$PROFILE`도 후보 |
+   | 디렉토리 링크 수단 | symlink | junction |
+   | 파일 링크 수단 | symlink | 개발자 모드 켜짐 → symlink, 꺼짐 → 없음 |
+   | 기존 수동 셋업 | `~/.zshrc`의 `CLAUDE_CONFIG_DIR` alias | PowerShell 프로필의 `CLAUDE_CONFIG_DIR` 함수 |
+
+2. **확인** (`AskUserQuestion`, 1회)
+
+   ```
+   이 환경으로 진행할게요. 맞나요?
+   Windows 11 · PowerShell 5.1 (프로필: ...\Microsoft.PowerShell_profile.ps1)
+   디렉토리 공유: junction / CLAUDE.md 공유: 안 함 (개발자 모드 꺼짐)
+   ● 맞아요
+   ○ 개발자 모드를 켜고 다시 확인할게요   (켜는 법 안내 후 재감지)
+   ○ 셸 통합 대상을 바꿀게요              (PowerShell 7 / 수동 안내)
+   ○ 취소
+   ```
+
+   셸 통합 대상 후보가 하나뿐이면 둘째 줄 이후 선택지는 감지 결과에 따라 줄인다.
+
+3. **저장**: 확인된 값을 `~/.account-partition-env.json`에 남긴다. 다음 호출은 다시 감지해서 저장값과 같으면 묻지 않고, 달라졌으면(개발자 모드가 켜짐, pwsh 설치 등) 바뀐 항목만 보여 주고 다시 확인받는다.
+
+macOS에서도 같은 단계를 돈다. 감지 결과가 기존 동작(zsh, symlink)과 같으므로 사용자 입장에서는 확인 한 번이 늘어날 뿐이다.
+
+#### 21.2 플랫폼 추상화: 새 `scripts/platform.sh`
+
+모든 헬퍼가 source하는 공통 모듈. 함수는 OS별 구현을 고르기만 하고, 무엇을 할지는 plan(§15)이 정한다.
+
 ```bash
-ap_os()            # "macos"/"windows"/"linux" (uname 기반)
-ap_config_home()   # macOS·Windows(Git Bash) 모두 $HOME
-ap_shell_rc()      # macOS: ~/.zshrc / Windows: PowerShell $PROFILE
-ap_make_link()     # 디렉토리→junction(win)/symlink(mac), 파일→symlink 양쪽
-ap_alias_block()   # zsh alias / PowerShell function 문자열
-ap_check_active()  # pgrep(mac) / tasklist(win)
+ap_os()              # macos / windows / linux. AP_OS_OVERRIDE 가 있으면 그 값 (테스트용)
+ap_env_detect()      # 21.1 감지 결과를 JSON 으로 출력
+ap_shell_rc()        # 확인된 셸 통합 파일 경로
+ap_link_dir()        # macOS: ln -s / Windows: cmd //c mklink /J. 만든 뒤 ap_is_link 로 검사
+ap_link_file()       # macOS: ln -s / Windows+개발자모드: MSYS=winsymlinks:nativestrict ln -s / 그 외: 실패(호출하지 않음)
+ap_is_link()         # macOS: [ -L ] / Windows: fsutil reparsepoint query 의 태그가 0xa0000003 또는 0xa000000c
+ap_alias_block()     # zsh alias 또는 PowerShell 함수 블록 문자열
+ap_check_active()    # macOS: pgrep / Windows: tasklist 의 claude.exe + 대상 config dir 대조
 ```
 
-#### 21.2 OS별 차이 매핑
+**Windows에서 `ln -s`를 직접 부르는 코드를 두지 않는다.** 복사본이 생겨도 성공으로 끝나기 때문이다. 링크를 만든 모든 경로는 직후에 `ap_is_link`로 검사하고, 링크가 아니면 그 단계를 실패로 처리해 롤백한다(§11).
+
+#### 21.3 OS별 차이
 
 | 항목 | macOS/zsh | Windows/Git Bash + PowerShell |
 |---|---|---|
 | config 경로 | `~/.claude-<name>` | `$HOME/.claude-<name>` (Git Bash가 `%USERPROFILE%`로 정규화) |
-| 셸 통합 파일 | `~/.zshrc` | PowerShell `$PROFILE` |
-| alias 형식 | `alias claude-x="CLAUDE_CONFIG_DIR=... command claude"` | `function claude-x { $env:CLAUDE_CONFIG_DIR="..."; claude @args }` |
-| 디렉토리 공유 | symlink | **junction** (`cmd //c mklink /J`) — 권한 불필요 |
-| 파일 공유 (CLAUDE.md) | symlink | symlink (개발자 모드, 안 켜졌으면 안내) |
+| 셸 통합 파일 | `~/.zshrc` | PowerShell 프로필 (21.1에서 확인한 것) |
+| 디렉토리 공유 | symlink | junction |
+| 파일 공유 (`CLAUDE.md`) | symlink | 개발자 모드면 symlink, 아니면 공유 안 함 (D4) |
 | 활성 세션 감지 | `pgrep -f claude` | `tasklist` / `Get-Process` |
-| keychain | macOS Keychain | Windows Credential Manager — `claude auth`가 알아서 (우리 무관) |
+| 자격 증명 | macOS Keychain | Windows Credential Manager. `claude auth`가 처리하므로 우리 범위 밖 |
+| 로그인 상태 | `.claude.json`의 `oauthAccount.emailAddress` | 같음. `claude auth status`의 `configDirectory`로 교차 확인 가능 (전제 4) |
 
-#### 21.3 사전 검증 (구현 전 필수 — preconditions.md에 Windows 섹션 추가)
+**PowerShell 함수는 환경변수를 원래대로 되돌린다.** 이전 설계의 `function claude-x { $env:CLAUDE_CONFIG_DIR="..."; claude @args }`는 한 번 실행한 창에 값을 남겨, 이후 그냥 `claude`를 치면 다른 계정으로 뜬다. 사용자의 기존 수동 함수에서 실제로 확인된 문제다.
 
-본인 Windows에서 확인할 핵심 전제:
-1. **CC가 Windows에서 plugin의 Bash 코드 블록을 Git Bash로 실행하는지** (PowerShell/cmd면 전략 재검토 — 가장 중요)
-2. **Git Bash `ln -s` 동작** — native symlink? 복사? (`MSYS=winsymlinks` 환경변수 영향)
-3. **junction 생성**(`cmd //c mklink /J`)이 권한 없이 되는지
-4. **`claude auth status/login/logout`이 Windows에서 동일 JSON 반환하는지**
+```powershell
+# account-partition: <name>
+function claude-<name> {
+    $prev = $env:CLAUDE_CONFIG_DIR
+    try {
+        $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\.claude-<name>"
+        & claude @args
+    } finally {
+        if ($null -eq $prev) { Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue }
+        else { $env:CLAUDE_CONFIG_DIR = $prev }
+    }
+}
+# /account-partition: <name>
+```
 
-#### 21.4 영향 범위
+블록을 시작·끝 주석으로 감싸 `remove_block`(v0.4)이 여러 줄 함수를 통째로 지울 수 있게 한다. 기존 zsh 블록 규칙(§12, 스킬이 만든 블록만 자동 편집)은 그대로다.
 
-- 새 파일: `scripts/platform.sh`
-- 분기 추가: `shell-rc.sh`(가장 큼 — PowerShell `$PROFILE` 편집 + zsh 분기), `plan-execute.sh`(링크·append_block), `plan-build.sh`(alias 형식), `safety.sh`(프로세스 감지), `discover.sh`·`matrix.sh`(경로)
-- SKILL.md: 경로·명령 표기 OS 무관하게 (또는 분기 안내)
+#### 21.4 외부 계정 인식 (Windows)
 
-#### 21.5 테스트
+§13 발견 로직에 PowerShell 프로필 검색을 더한다. `CLAUDE_CONFIG_DIR`을 설정하는 함수가 있으면 그 경로를 계정 후보로 올리고, 스킬 주석 블록이 아니면 "외부"로 표시한다.
+
+손으로 만든 셋업은 공유 항목이 `~/.claude-shared`가 아니라 `~/.claude`를 직접 가리키는 junction일 수 있다. 매트릭스는 링크 대상이 공유 보관소가 아니면 "공유 (외부: `~/.claude` 직결)"로 표시하고, 수정은 v1 정책대로 수동 안내만 한다.
+
+조회는 외부 함수가 환경변수를 되돌리지 않으면 "⚠ 이 함수를 실행한 창에서는 `claude`가 이 계정으로 뜹니다"를 함께 표시한다.
+
+#### 21.5 마켓플레이스 주소 대조 (OS 무관)
+
+`plugins/`는 공유하고 `settings.json`은 격리하므로(§17), 마켓플레이스 주소가 두 곳에 나뉘어 있다. 공유 쪽은 `plugins/known_marketplaces.json`, 계정 쪽은 각 계정 `settings.json`의 `extraKnownMarketplaces`다. 마켓플레이스 저장소가 옮겨지면 공유 쪽만 바뀌고 계정 쪽은 옛 주소로 남는다. 그러면 그 계정에서 플러그인이 "added but ignored"로 꺼진다. 2026-10-07 사용자 환경에서 실제로 났다(`tests/preconditions.md` 검증 3).
+
+- **조회**: 계정마다 두 주소를 대조해 다르면 "⚠ 마켓플레이스 주소 불일치: `<이름>` 공유=`a/b`, 이 계정=`c/d`. 이 계정에서 플러그인이 꺼집니다"를 표시한다.
+- **수정**: v0.5에서는 맞추는 명령을 출력만 한다. `settings.json`은 시크릿이 있을 수 있는 격리 항목이라 자동 편집하지 않는다(§17). 자동화는 v0.6 후보.
+
+#### 21.6 영향 범위
+
+- 새 파일: `scripts/platform.sh`, `tests/unit/platform_test.sh`
+- 분기 추가: `shell-rc.sh`(가장 큼. PowerShell 프로필 편집과 여러 줄 블록), `plan-execute.sh`(링크 생성과 검사, append_block), `plan-build.sh`(alias 형식, 파일 공유 생략), `safety.sh`(프로세스 감지), `discover.sh`(PowerShell 프로필 검색, 링크 대상 판별), `matrix.sh`(공유 안 됨 표시, 마켓플레이스 대조)
+- SKILL.md: 6개 sub-skill 첫 단계에 21.1 환경 확인. 경로·명령 표기는 OS 무관하게
+
+#### 21.7 테스트
 
 - macOS 단위 테스트 131개 유지 (회귀 없게)
-- `platform.sh` 단위 테스트 (OS 감지 mock — `AP_OS_OVERRIDE` env 같은 걸로 강제)
-- Windows에서 MV 시나리오 수동 검증 (본인 환경)
+- `platform_test.sh`: `AP_OS_OVERRIDE`로 OS를 고정하고 링크 수단, alias 블록, 셸 통합 파일 선택을 단정한다. Windows 링크 검사는 실제 Windows에서만 도는 테스트로 분리한다
+- 실패 주입: Windows에서 링크가 복사본으로 생긴 상황을 흉내 내 `ap_is_link`가 실패시키고 롤백하는지
+- Windows MV 시나리오 수동 검증 (본인 환경). 기존 `claude-work`, `claude-dami` 수동 셋업이 외부 계정으로 잡히고 건드려지지 않는지 포함
 
 ### 새 세션이 이어받는 지점
 
-1. **이 디자인(§21)을 사용자에게 다시 제시 → 승인 받기** (아직 "OK" 안 받음)
-2. 승인되면: spec self-review → `/codex:adversarial-review` (codex 적대적 리뷰) → 사용자 최종 승인
+1. ~~§21 디자인 승인~~ 2026-10-07 승인 (D4, D5 추가)
+2. spec self-review → 적대적 설계 리뷰 → **사용자가 이 문서를 읽고 최종 승인**
 3. → `superpowers:writing-plans`로 v0.5 구현 계획 작성
-4. → `superpowers:subagent-driven-development`로 구현 (Phase별 implementer + spec/quality reviewer)
-5. 매 변경마다 version bump + push, 사용자가 `/plugin update && /reload-plugins`로 검증
+4. → `superpowers:subagent-driven-development`로 구현
+5. 매 변경마다 version bump + push, 사용자가 `/plugin update`로 검증
 
-작업 위치: `~/workspace/gang/account-partition/` (별도 plugin repo, main 브랜치, 직접 commit + push). 작업 셸 cwd는 보통 `~/workspace/gang/apt-leaf`였지만 account-partition repo에서 git 작업.
-
-진행 방식: 사용자는 빠른 진행 선호. 판단 필요한 결정은 객관식(AskUserQuestion)으로 묻고, 큰 디자인/아키텍처는 Codex와 의논(글로벌 CLAUDE.md 규칙). push는 외부 publish라 명시 승인 필요하나 사용자가 "github 공유" 의도를 처음부터 밝혔고 매 버전 push 흐름에 동의함.
+진행 방식: 사용자는 빠른 진행을 선호한다. 판단이 필요한 결정은 객관식으로 하나씩 묻는다.

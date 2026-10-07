@@ -76,3 +76,21 @@ v1에서 **keychain entry → config dir 매핑은 시도하지 않음**. 대신
 
 - macOS 24.3.0 + CC version: Claude Code 2.x (claude-code-cli)
 - 해시 알고리즘 미확인은 v1 진행 차단 요소 아님 (디자인의 fallback이 이미 정상 동작 경로)
+
+## 검증 3: Windows 전제 (v0.5, 디자인 §21.3)
+
+2026-10-07, Windows 11 Home 10.0.26200 + Claude Code 2.1.292 + Git Bash 5.2.26 (MINGW64) + Windows PowerShell 5.1. 개발자 모드 꺼짐(레지스트리 `AppModelUnlock\AllowDevelopmentWithoutDevLicense` 없음).
+
+| # | 전제 | 결과 | 확인 방법 |
+|---|---|---|---|
+| 1 | CC가 Bash 블록을 Git Bash로 실행 | **성립** | Bash 도구 안에서 `uname -s` = `MINGW64_NT-10.0-26200`, `$MSYSTEM` = `MINGW64` |
+| 2 | Git Bash `ln -s`가 진짜 링크를 만든다 | **불성립** | 기본(`MSYS=disable_pcon`)에서는 오류 없이 **복사본**이 생긴다. `dir /AL`에 안 잡히고 원본 수정이 반영되지 않는다. `MSYS=winsymlinks:nativestrict`로 강제하면 `Operation not permitted` |
+| 3 | junction을 권한 없이 만든다 | **성립** | `cmd //c "mklink /J <link> <target>"` 성공. `fsutil reparsepoint query` 태그 `0xa0000003`. 양쪽 수정이 서로 보인다 |
+| 4 | `claude auth status`가 JSON | **성립** | 키: `analyticsDisabled`, `apiProvider`, `authMethod`, `configDirectory`, `email`, `loggedIn`, `orgId`, `orgName`, `projectsDirectory`, `subscriptionType` |
+
+추가로 본 것:
+
+- **파일 하드링크**(`mklink /H`)는 권한 없이 된다. 다만 편집기가 새 파일을 쓰고 이름을 바꾸는 방식으로 저장하면 링크가 조용히 끊긴다. 그래서 `CLAUDE.md` 공유 수단으로 쓰지 않기로 했다(디자인 §21.2).
+- **이미 손으로 나눈 계정이 있다.** PowerShell 프로필의 `claude-work`, `claude-dami` 함수가 `CLAUDE_CONFIG_DIR`을 바꿔 `claude`를 부른다. 두 계정 모두 `skills`, `plugins`, `commands`를 `~/.claude`로 향하는 junction으로 공유하고 `settings.json`은 따로 둔다.
+- **그 함수들은 환경변수를 되돌리지 않는다.** `claude-work`를 한 번 실행한 PowerShell 창에서는 이후 그냥 `claude`를 쳐도 work 계정으로 뜬다.
+- **plugins 공유와 settings 격리가 어긋나는 사고를 실제로 겪었다.** 마켓플레이스 저장소를 옮긴 뒤 `plugins/known_marketplaces.json`(공유)은 새 주소가 됐는데 `settings.json`의 `extraKnownMarketplaces`(계정별)는 옛 주소로 남아, 그 계정에서 플러그인이 "added but ignored"로 꺼졌다.
