@@ -212,6 +212,57 @@ assert_eq "$?" "2" "중간 실패 → exit 2"
 PLAN_DIR="$sb/state2" bash "$SCRIPTS/plan-rollback.sh" >/dev/null 2>&1
 assert_eq "$(md5sum < "$PS")" "$before_ps" "롤백 후 프로필 원상 복구"
 
+echo "── 리뷰 회귀: 파서·줄바꿈·unlink 보호"
+R="$sb/review"; mkdir -p "$R"
+# #3 한 줄 함수 헤더 + 다음 줄 닫는 괄호 + ${HOME}
+printf 'export KEEP=1\nclaude-r3() { env CLAUDE_CONFIG_DIR="${HOME}/.claude-work" claude "$@"\n}\nexport AFTER=1\n' > "$R/r3.sh"
+ext=$(python3 "$AP_LIB" externals "$R/r3.sh" posix)
+assert_eq "$(echo "$ext" | python3 -c "import json,sys; e=json.load(sys.stdin)[0]; print(e['start'], e['end'], e['parseable'])")" "1 2 True" "\${HOME} 가 있는 함수의 끝 줄을 정확히 찾음"
+# #4 PowerShell: 들여쓴 함수 + 바깥 if 블록
+printf 'if ($true) {\n    function claude-r4 {\n        $env:CLAUDE_CONFIG_DIR = "$HOME\\.claude-r4"\n        & claude @args\n    }\n    $env:OTHER = 1\n}\n' > "$R/r4.ps1"
+ext=$(python3 "$AP_LIB" externals "$R/r4.ps1" powershell)
+assert_eq "$(echo "$ext" | python3 -c "import json,sys; e=json.load(sys.stdin)[0]; print(e['start'], e['end'], sorted(e['definition']['extra_env']))")" "1 4 []" "들여쓴 PowerShell 함수의 짝 괄호에서 끝남 (바깥 코드 흡수 안 함)"
+# #5 블록 주석 / 다른 도구 마커는 흡수하지 않음
+printf '<#\n doc\n#>\nfunction claude-r5 {\n    & claude @args\n}\n' > "$R/r5.ps1"
+assert_eq "$(python3 "$AP_LIB" externals "$R/r5.ps1" powershell | python3 -c "import json,sys; e=json.load(sys.stdin)[0]; print(e['comment_start'])")" "3" "PowerShell 블록 주석(#>) 흡수 안 함"
+printf '# <<< conda initialize <<<\nclaude-r5b() { claude "$@"; }\n' > "$R/r5b.sh"
+assert_eq "$(python3 "$AP_LIB" externals "$R/r5b.sh" posix | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['comment_start'])")" "1" "다른 도구 마커(# <<<) 흡수 안 함"
+printf '# 관련 없는 설명\nclaude-r5c() { claude "$@"; }\n' > "$R/r5c.sh"
+assert_eq "$(python3 "$AP_LIB" externals "$R/r5c.sh" posix | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['comment_start'])")" "1" "이름 언급 없는 주석은 흡수 안 함"
+# #6 LF 파일에 CRLF 한 줄 → 다른 줄은 LF 유지
+printf 'export A=1\nexport B=2\r\nexport C=3\n' > "$R/r6.sh"
+python3 "$AP_LIB" block-write "$R/r6.sh" r6 posix "$TOK"
+assert_eq "$(PY "print(open(aplib.npath(r'$R/r6.sh'),'rb').read().count(b'\r'))")" "1" "원래 CRLF 였던 한 줄만 CRLF (파일 전체 변환 안 함)"
+# #7 함수 본문 안 'VAR=값 claude "$@"' 형태
+printf 'claude-r7() {\n  CLAUDE_CONFIG_DIR="$HOME/.claude-r7" claude "$@"\n}\n' > "$R/r7.sh"
+assert_eq "$(python3 "$AP_LIB" externals "$R/r7.sh" posix | python3 -c "import json,sys; e=json.load(sys.stdin)[0]; print(e['parseable'], e['definition']['config_dir'])")" "True ~/.claude-r7" "VAR=값 claude \"\$@\" 형태 해석"
+# 경로 접두 오인 ($HOMEBREW_PREFIX)
+assert_eq "$(PY "print(aplib._norm_value_path('\$HOMEBREW_PREFIX/x').startswith('~'))")" "False" "\$HOMEBREW_PREFIX 를 홈으로 오인하지 않음"
+# #1 token_dir 이 다른 계정 폴더면 unlink 가 지우지 않음
+RG="$R/reg.json"
+PY "aplib.registry_save(r'$RG', {'version':1,'accounts':{'w':{'mode':'standard','config_dir':'~/.claude-work','token_dir':None,'targets':[]},'x':{'mode':'token-only','config_dir':'~/.claude','token_dir':'~/.claude-work','targets':[]}}})"
+out=$(AP plan-unlink --name x --registry "$RG")
+if [[ "$out" == *'"remove_dir"'* || "$out" == *'"archive_dir"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 다른 계정 폴더를 토큰 폴더로 쓰는 계정 unlink 가 그 폴더를 지움"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 토큰 폴더가 다른 계정 폴더면 지우지 않음"
+fi
+PY "aplib.registry_save(r'$RG', {'version':1,'accounts':{'x':{'mode':'token-only','config_dir':'~/.claude-work','token_dir':'~/.claude','targets':[]}}})"
+out=$(AP plan-unlink --name x --registry "$RG")
+if [[ "$out" == *'"remove_dir"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 토큰 폴더가 ~/.claude 인데 삭제"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 토큰 폴더가 기본 계정(~/.claude)이면 지우지 않음"
+fi
+# #8 링크가 들어 있는 아카이브 복원
+mkdir -p "$R/pool/plugins" "$R/acct"; echo p > "$R/pool/plugins/a"; echo own > "$R/acct/own.txt"
+PY "aplib.make_link(r'$R/pool/plugins', r'$R/acct/plugins')"
+echo '{"operations":[{"op":"archive_dir","src":"'"$R/acct"'"},{"op":"remove_dir","path":"'"$R/acct"'"},{"op":"create_symlink","src":"'"$R"'/nope","dst":"'"$R"'/x"}]}' | PLAN_DIR="$R/st" bash "$SCRIPTS/plan-execute.sh" >/dev/null 2>&1
+PLAN_DIR="$R/st" bash "$SCRIPTS/plan-rollback.sh" >/dev/null 2>&1
+assert_eq "$(cat "$R/acct/own.txt" 2>/dev/null)" "own" "unlink 롤백: 계정 폴더 복원"
+assert_eq "$(cat "$R/acct/plugins/a" 2>/dev/null)" "p" "unlink 롤백: 공유 링크 복원"
+assert_file_exists "$R/pool/plugins/a" "아카이브·삭제 중 공유 원본 보존"
+
 echo "── 링크: junction/symlink 제거 시 대상 보존"
 mkdir -p "$sb/pool/plugins"; echo keep > "$sb/pool/plugins/f.txt"; mkdir -p "$sb/acct"
 PY "aplib.make_link(r'$sb/pool/plugins', r'$sb/acct/plugins'); aplib.remove_tree(r'$sb/acct')"

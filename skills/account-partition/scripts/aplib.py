@@ -128,14 +128,26 @@ def now_ts() -> str:
 # ─────────────────────────── 링크 (junction/symlink) ───────────────────────────
 
 
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+def _is_junction(p: str) -> bool:
+    isj = getattr(os.path, "isjunction", None)
+    if isj:
+        return isj(p)
+    if not _real_windows():
+        return False
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    # Python 3.8~3.11: junction 은 islink()=False 라서 reparse point 속성으로 판별
+    return bool(getattr(st, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT) and not os.path.islink(p)
+
+
 def is_link(p: str) -> bool:
     p = npath(p)
-    if os.path.islink(p):
-        return True
-    isj = getattr(os.path, "isjunction", None)
-    if isj and isj(p):
-        return True
-    return False
+    return os.path.islink(p) or _is_junction(p)
 
 
 def make_link(src: str, dst: str) -> str:
@@ -164,8 +176,7 @@ def make_link(src: str, dst: str) -> str:
 def remove_link(p: str) -> None:
     """링크만 제거. junction은 rmdir (대상 내용 보존)."""
     n = npath(p)
-    isj = getattr(os.path, "isjunction", None)
-    if isj and isj(n):
+    if _is_junction(n):
         os.rmdir(n)
     elif os.path.islink(n):
         if _real_windows() and os.path.isdir(n):
@@ -186,6 +197,26 @@ def remove_tree(p: str) -> None:
         os.rmdir(n)
     elif os.path.lexists(n):
         os.unlink(n)
+
+
+def extract_archive(archive: str, parent: str) -> None:
+    """archive_dir 로 만든 tar.gz 복원. 링크 항목은 make_link 로 다시 만든다
+    (junction 대상 '\\\\?\\C:\\...' 표기 정리, Python 3.14 기본 'data' 필터의 절대경로 링크 거부 회피)."""
+    import tarfile
+    parent = npath(parent)
+    with tarfile.open(npath(archive), "r:gz") as tf:
+        members = tf.getmembers()
+        links = [m for m in members if m.issym() or m.islnk()]
+        regular = [m for m in members if not (m.issym() or m.islnk())]
+        kw = {"filter": "fully_trusted"} if hasattr(tarfile, "fully_trusted_filter") else {}
+        tf.extractall(parent, members=regular, **kw)
+    for m in links:
+        target = m.linkname
+        if target.startswith("\\\\?\\"):
+            target = target[4:]
+        dst = os.path.join(parent, m.name)
+        if target and not os.path.lexists(dst):
+            make_link(target, dst)
 
 
 def pid_alive(pid: int) -> bool:
@@ -445,22 +476,31 @@ def _write_bytes(path: str, data: bytes) -> None:
 
 
 def _split(data: bytes) -> tuple[bytes, list[bytes], bytes]:
-    """(bom, lines-without-eol, eol)"""
+    """(bom, lines, 새 줄에 쓸 줄바꿈).
+
+    각 줄은 원래 끝의 CR 을 그대로 가진다 — 줄마다 원래 줄바꿈을 보존해서,
+    LF 파일에 CRLF 줄 하나가 섞여 있어도 파일 전체가 CRLF 로 바뀌지 않게 한다.
+    새로 넣는 줄의 줄바꿈은 기존 줄의 다수결."""
     bom = b""
     if data.startswith(b"\xef\xbb\xbf"):
         bom, data = b"\xef\xbb\xbf", data[3:]
-    eol = b"\r\n" if b"\r\n" in data else b"\n"
     lines = data.split(b"\n")
-    lines = [ln[:-1] if ln.endswith(b"\r") else ln for ln in lines]
     if lines and lines[-1] == b"":
         lines.pop()
+    crlf = sum(1 for ln in lines if ln.endswith(b"\r"))
+    eol = b"\r\n" if lines and crlf * 2 > len(lines) else b"\n"
     return bom, lines, eol
 
 
-def _join(bom: bytes, lines: list[bytes], eol: bytes) -> bytes:
+def _mk(line: str, eol: bytes) -> bytes:
+    b = line.encode("ascii")
+    return b + b"\r" if eol == b"\r\n" else b
+
+
+def _join(bom: bytes, lines: list[bytes], eol: bytes | None = None) -> bytes:
     if not lines:
         return bom
-    return bom + eol.join(lines) + eol
+    return bom + b"\n".join(lines) + b"\n"
 
 
 def _managed_ranges(lines: list[bytes], name: str) -> list[tuple[int, int]]:
@@ -519,7 +559,7 @@ def block_write(path: str, name: str, block: list[str], new_file_bom: bool = Fal
     else:
         bom = b"\xef\xbb\xbf" if new_file_bom else b""
         lines, eol = [], (new_file_eol or b"\n")
-    enc = [ln.encode("ascii") for ln in block]
+    enc = [_mk(ln, eol) for ln in block]
     ranges = _managed_ranges(lines, name)
     if ranges:
         s0, e0 = ranges[0]
@@ -535,7 +575,7 @@ def block_write(path: str, name: str, block: list[str], new_file_bom: bool = Fal
         lines = new
     else:
         if lines and lines[-1].strip() != b"":
-            lines.append(b"")
+            lines.append(_mk("", eol))
         lines.extend(enc)
     _write_bytes(path, _join(bom, lines, eol))
 
@@ -560,9 +600,10 @@ def list_blocks(path: str) -> list[str]:
 
 # ─────────────────────────── 외부 정의 파서 (adopt) ───────────────────────────
 
+_B = r"(?=[/\\]|$)"  # $HOMEBREW_PREFIX 같은 접두 오인 방지
 _HOME_PATTERNS = [
-    r"^\$\{HOME\}", r"^\$HOME", r"^~", r"^\$\{USERPROFILE\}", r"^\$USERPROFILE",
-    r"^%USERPROFILE%", r"^\$env:USERPROFILE", r"^\$env:HOME", r"^\$HOME",
+    r"^\$\{HOME\}" + _B, r"^\$HOME" + _B, r"^~" + _B, r"^\$\{USERPROFILE\}" + _B, r"^\$USERPROFILE" + _B,
+    r"^%USERPROFILE%" + _B, r"^\$env:USERPROFILE" + _B, r"^\$env:HOME" + _B,
 ]
 
 
@@ -615,9 +656,24 @@ def _parse_posix_tokens(tokens: list[str]) -> dict:
 
 
 def _shlex(s: str) -> list[str]:
-    lex = shlex.shlex(s, posix=False, punctuation_chars=False)
+    lex = shlex.shlex(s, posix=True)
     lex.whitespace_split = True
-    return [t for t in lex]
+    lex.commenters = ""
+    try:
+        return [t for t in lex]
+    except ValueError as e:
+        raise Unparseable(f"따옴표 해석 실패: {s}") from e
+
+
+_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _assignments(toks: list[str]) -> dict | None:
+    """'[export] A=1 B=2' 처럼 할당만 있는 문장이면 dict, 명령이 섞이면 None."""
+    t = toks[1:] if toks and toks[0] == "export" else toks
+    if t and all(_ASSIGN_RE.match(x) for x in t):
+        return dict(x.split("=", 1) for x in t)
+    return None
 
 
 def _unquote(v: str) -> str:
@@ -651,13 +707,56 @@ def _decode(b: bytes) -> str:
     return b.decode("utf-8", "replace")
 
 
+def _brace_delta(s: str) -> int:
+    """따옴표 문자열, ${...}, $(...) 안의 중괄호와 줄 끝 주석을 무시한 '{' - '}' 개수."""
+    t = re.sub(r"'[^']*'", "", s)
+    t = re.sub(r'"(?:\\.|[^"\\])*"', "", t)
+    t = re.sub(r"\$\{[^}]*\}", "", t)
+    t = re.sub(r"(^|\s)#.*$", "", t)
+    return t.count("{") - t.count("}")
+
+
+def _scan_function(lines: list[str], i: int, rest: str) -> tuple[int, list[str]] | None:
+    """i 번째 줄에서 '{' 직후 내용이 rest 인 함수의 끝 줄과 본문. 짝이 안 맞으면 None."""
+    depth = 1 + _brace_delta(rest)
+    body = [rest]
+    j = i
+    while depth > 0:
+        j += 1
+        if j >= len(lines):
+            return None
+        depth += _brace_delta(lines[j])
+        body.append(lines[j])
+    return j, body
+
+
+_COMMENT_STOP = re.compile(r"^\s*(#>|<#|#\s*(end)?region\b|#\s*(>>>|<<<))", re.IGNORECASE)
+
+
+def _attached_comment_start(lines: list[str], start: int, name: str, blocked: set) -> int:
+    """정의 바로 위에 붙은 주석 묶음 중 이 정의를 설명하는 것만 함께 지운다.
+
+    묶음 안에 claude-<name> 또는 (<name>) 언급이 있을 때만 포함하고,
+    PowerShell 블록 주석(<# #>), #region, 다른 도구의 >>> <<< 마커에서 멈춘다."""
+    s = start
+    while s - 1 >= 0 and (s - 1) not in blocked:
+        ln = lines[s - 1]
+        if not ln.lstrip().startswith("#") or _COMMENT_STOP.match(ln):
+            break
+        s -= 1
+    mention = re.compile(r"(claude-" + re.escape(name) + r"\b|\(" + re.escape(name) + r"\))")
+    if s < start and any(mention.search(lines[k]) for k in range(s, start)):
+        return s
+    return start
+
+
 def parse_rc_externals(path: str, kind: str) -> list[dict]:
     """rc/프로필 안의 관리 블록 밖 claude-* 정의. kind: posix|powershell."""
     data = _read_bytes(path)
     if not data:
         return []
     _, blines, _ = _split(data)
-    lines = [_decode(b) for b in blines]
+    lines = [_decode(b).rstrip("\r") for b in blines]
     managed = set()
     for nm in list_blocks(path):
         for s, e in _managed_ranges(blines, nm):
@@ -673,46 +772,33 @@ def parse_rc_externals(path: str, kind: str) -> list[dict]:
             m = re.match(r"^\s*alias\s+claude-(" + NAME_RE + r")=(.*)$", ln)
             if m:
                 name, body = m.group(1), _unquote(m.group(2).strip())
-                out.append(_mk_ext(path, kind, name, i, i, lambda: _parse_posix_tokens(_shlex(body))))
+                out.append(_mk_ext(path, kind, name, i, i, lambda b=body: _parse_posix_tokens(_shlex(b))))
                 i += 1
                 continue
             m = re.match(r"^\s*(?:function\s+)?claude-(" + NAME_RE + r")\s*(?:\(\))?\s*\{(.*)$", ln)
-            if m:
-                name = m.group(1)
-                start = i
-                body_parts = [m.group(2)]
-                j = i
-                if "}" not in m.group(2):
-                    j = i + 1
-                    while j < len(lines) and not re.match(r"^\s*\}\s*$", lines[j]):
-                        body_parts.append(lines[j])
-                        j += 1
-                out.append(_mk_ext(path, kind, name, start, j, lambda bp=body_parts: _parse_posix_body(bp)))
-                i = j + 1
-                continue
-        elif kind == "powershell":
+            parse_body = _parse_posix_body
+        else:
             m = re.match(r"^\s*function\s+claude-(" + NAME_RE + r")\s*\{(.*)$", ln, flags=re.IGNORECASE)
-            if m:
-                name = m.group(1)
-                start = i
-                body_parts = [m.group(2)]
-                j = i
-                if "}" not in m.group(2):
-                    j = i + 1
-                    while j < len(lines) and not re.match(r"^\}\s*$", lines[j]):
-                        body_parts.append(lines[j])
-                        j += 1
-                out.append(_mk_ext(path, kind, name, start, j, lambda bp=body_parts: _parse_ps_body(bp)))
-                i = j + 1
+            parse_body = _parse_ps_body
+        if m:
+            name = m.group(1)
+            scanned = _scan_function(lines, i, m.group(2))
+            if scanned is None:
+                e = {"file": path, "kind": kind, "name": name, "start": i, "end": i,
+                     "parseable": False, "reason": "함수의 닫는 중괄호를 찾을 수 없음"}
+                out.append(e)
+                i += 1
                 continue
+            j, body = scanned
+            out.append(_mk_ext(path, kind, name, i, j, lambda bp=body, pb=parse_body: pb(bp)))
+            i = j + 1
+            continue
         i += 1
-    # 바로 위에 붙은 주석 줄을 범위에 포함 (제거 시 같이 정리)
+    taken = set(managed)
     for e in out:
-        s = e["start"]
-        while s - 1 >= 0 and (s - 1) not in managed and lines[s - 1].lstrip().startswith("#") \
-                and lines[s - 1].strip() != "" and not any(o["end"] == s - 1 for o in out):
-            s -= 1
-        e["comment_start"] = s
+        taken.update(range(e["start"], e["end"] + 1))
+    for e in out:
+        e["comment_start"] = _attached_comment_start(lines, e["start"], e["name"], taken)
     return out
 
 
@@ -728,6 +814,11 @@ def _mk_ext(path, kind, name, start, end, fn) -> dict:
     return e
 
 
+def _strip_close_brace(s: str) -> str:
+    """문장 끝의 단독 '}' (함수 닫는 괄호)만 떼어낸다. '${HOME}' 의 '}' 는 남긴다."""
+    return re.sub(r"(^|\s)\}\s*$", "", s).strip()
+
+
 def _parse_posix_body(parts: list[str]) -> dict:
     sets: dict[str, str] = {}
     unsets: set[str] = set()
@@ -737,18 +828,19 @@ def _parse_posix_body(parts: list[str]) -> dict:
             s = stmt.strip()
             if not s or s.startswith("#") or s == "}":
                 continue
-            s = s.rstrip("}").strip()
+            s = _strip_close_brace(s)
             if not s:
-                continue
-            m = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", s)
-            if m:
-                sets[m.group(1)] = m.group(2).strip()
                 continue
             m = re.match(r"^unset\s+(.+)$", s)
             if m:
                 unsets.update(m.group(1).split())
                 continue
-            p = _parse_posix_tokens(_shlex(s))
+            toks = _shlex(s)
+            a = _assignments(toks)
+            if a is not None:
+                sets.update(a)
+                continue
+            p = _parse_posix_tokens(toks)
             sets.update(p["set"])
             unsets |= p["unset"]
             called = True
@@ -766,7 +858,7 @@ def _parse_ps_body(parts: list[str]) -> dict:
             s = stmt.strip()
             if not s or s.startswith("#") or s == "}":
                 continue
-            s = s.rstrip("}").strip()
+            s = _strip_close_brace(s)
             if not s:
                 continue
             m = re.match(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", s, flags=re.IGNORECASE)
@@ -824,15 +916,16 @@ def parse_wrapper(path: str, kind: str) -> dict:
             else:
                 if s.startswith("#"):
                     continue
-                m = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", s)
-                if m:
-                    sets[m.group(1)] = m.group(2)
-                    continue
                 m = re.match(r"^unset\s+(.+)$", s)
                 if m:
                     unsets.update(m.group(1).split())
                     continue
-                p = _parse_posix_tokens(_shlex(s))
+                toks = _shlex(s)
+                a = _assignments(toks)
+                if a is not None:
+                    sets.update(a)
+                    continue
+                p = _parse_posix_tokens(toks)
                 sets.update(p["set"])
                 called = True
         if not called:
@@ -1044,8 +1137,19 @@ def plan_unlink(name: str, registry: str | None) -> dict:
             f"{', '.join('claude-' + d for d in dependents)} 이(가) 공유 중입니다. 먼저 그 계정들을 unlink 하세요.")
     targets = acct.get("targets") or []
     ops: list[dict] = []
+    warnings: list[str] = []
+    # 다른 계정이 config/토큰 폴더로 쓰는 경로 — 이 계정 unlink 로 지우면 안 된다
+    others = {p for n, a in reg["accounts"].items() if n != name
+              for p in ((a.get("config_dir") or DEFAULT_CONFIG), a.get("token_dir")) if p}
     if acct["mode"] != "token-only" and is_default_config(acct.get("config_dir")):
         pass  # 기본 계정(~/.claude)은 로그아웃·폴더 정리 없이 셸 정의만 제거 (기본 계정 보호)
+    elif acct["mode"] != "token-only" and (acct.get("config_dir") or DEFAULT_CONFIG) in others:
+        warnings.append(f"{acct.get('config_dir')} 는 다른 계정도 쓰는 폴더라 로그아웃·삭제하지 않고 셸 정의만 제거합니다.")
+    elif acct["mode"] == "token-only" and (
+            is_default_config(acct["token_dir"]) or acct["token_dir"] in others
+            or os.path.exists(os.path.join(from_home_rel(acct["token_dir"]), ".claude.json"))):
+        # 손으로 만든 정의를 adopt 하면 토큰 폴더가 다른 계정의 config 폴더일 수 있다
+        warnings.append(f"토큰 폴더 {acct['token_dir']} 가 다른 계정의 폴더이거나 config 폴더로 보여 지우지 않습니다. 셸 정의만 제거합니다.")
     elif acct["mode"] == "token-only":
         tok = from_home_rel(acct["token_dir"])
         if ap_os() == "macos":
@@ -1072,7 +1176,7 @@ def plan_unlink(name: str, registry: str | None) -> dict:
     if acct["mode"] != "token-only" and not is_default_config(acct.get("config_dir")):
         pre.append({"check": "no_active_session", "config_dir": from_home_rel(acct["config_dir"])})
     return {"metadata": {"action": "unlink", "alias_name": name, "mode": acct["mode"],
-                         "config_dir": from_home_rel(acct["config_dir"])},
+                         "config_dir": from_home_rel(acct["config_dir"]), "warnings": warnings},
             "preconditions": pre, "operations": ops}
 
 
@@ -1106,7 +1210,12 @@ def apply_op(op: dict) -> dict:
         bom, lines, eol = _split(data)
         drop = set()
         for e in exts:
-            drop.update(range(e.get("comment_start", e["start"]), e["end"] + 1))
+            s0 = e.get("comment_start", e["start"])
+            drop.update(range(s0, e["end"] + 1))
+            # 지운 자리 앞뒤가 모두 빈 줄이면 뒤쪽 빈 줄 하나를 같이 지워 빈 줄이 겹치지 않게
+            nxt = e["end"] + 1
+            if nxt < len(lines) and lines[nxt].strip() == b"" and (s0 == 0 or lines[s0 - 1].strip() == b""):
+                drop.add(nxt)
         new = [ln for i, ln in enumerate(lines) if i not in drop]
         while new and new[-1].strip() == b"":
             new.pop()
@@ -1116,9 +1225,12 @@ def apply_op(op: dict) -> dict:
         op["_backup_path"] = _backup(p) if op.get("backup_if_exists") else None
         op["_created"] = not os.path.lexists(p)
         eol = b"\r\n" if op.get("eol") == "crlf" else b"\n"
-        _write_bytes(p, _join(b"", [ln.encode("ascii") for ln in op["lines"]], eol))
+        _write_bytes(p, _join(b"", [_mk(ln, eol) for ln in op["lines"]]))
         if op.get("executable") and not _real_windows():
-            os.chmod(p, 0o755)
+            try:
+                os.chmod(p, 0o755)
+            except OSError as e:  # 쓰기는 끝났으므로 실패로 처리하지 않는다 (롤백 누락 방지)
+                op["_warning"] = f"chmod 실패: {e}"
     elif kind == "remove_file":
         p = npath(op["path"])
         if os.path.lexists(p):

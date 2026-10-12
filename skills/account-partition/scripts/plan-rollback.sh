@@ -91,8 +91,7 @@ for i in reversed(completed):
                 sorted(glob.glob(f"{src}.removed.*.tar.gz"), key=os.path.getmtime, reverse=True)
             if archives:
                 if not os.path.exists(src):
-                    with tarfile.open(archives[0], "r:gz") as tf:
-                        tf.extractall(os.path.dirname(src) or ".")
+                    aplib.extract_archive(archives[0], os.path.dirname(src) or ".")
                 print(f"  [{i}] rollback archive_dir: {archives[0]} → {op['src']} 복원")
             else:
                 print(f"  [{i}] rollback archive_dir: archive 파일 없음 — 수동 확인 필요", file=sys.stderr)

@@ -598,7 +598,9 @@ CC가 정식으로 `claude auth` subcommand를 제공한다는 발견을 바탕�
 - **P1-4** `claude auth` 의존성 무방비 — CC 버전 변경 시 깨짐. feature-detect 필요
 - **P2** SKILL.md 템플릿 통일(add는 상세, edit는 "Add와 같은 패턴" 생략), failure-injection 테스트 확대, README Safety 섹션, CHANGELOG.md 부재
 
-### 진행 중: Windows 지원 (v0.5.0) — brainstorming 완료, 디자인 승인 대기
+> **2026-10-12 갱신**: 아래 v0.5 Windows 핸드오프는 `docs/work/multi-os-token-partition/design.md` 로 대체되어 v0.5.0 으로 구현·배포됐다 (멀티 OS + 셸 4종 + 토큰만 분리 + adopt). 현재 상태는 `.ai/status/STATUS.md` 참고. 아래 내용은 기록용.
+
+### (기록) Windows 지원 (v0.5.0) — brainstorming 완료, 디자인 승인 대기
 
 **받은 결정 (brainstorming)**:
 1. Windows 검증 환경: 사용자 본인 Windows 있음 — 직접 MV 검증 가능

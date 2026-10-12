@@ -1,15 +1,26 @@
 # 진행 상태
 
-## 현재: v0.5.0 진행 중 (2026-10-12)
+## 현재: v0.5.0 (2026-10-12)
 
 - spec: `docs/work/multi-os-token-partition/design.md`
-- 범위: 멀티 OS(macOS/Linux/Windows) 플랫폼 계층, 셸 4종(zsh/bash/PowerShell/cmd 래퍼) 동시 기록, adopt, 토큰만 분리 모드
+- 완료
+  - 플랫폼 계층(`platform.sh`, `aplib.py`): macOS/Linux/Windows(Git Bash), Python UTF-8 강제, MSYS 경로 변환, junction 안전 링크
+  - 셸 4종(zsh/bash/PowerShell/cmd 래퍼) 동시 기록, env 누수 차단
+  - 토큰만 분리 모드(`CLAUDE_SECURESTORAGE_CONFIG_DIR`), adopt sub-skill, registry(`~/.claude-shared/accounts.json`)
+  - unlink 안전장치: 공유 config 보호, 기본 계정 보호, token-only 는 토큰 폴더만 정리
+- 검증
+  - 단위 테스트 전체 통과: Windows(Git Bash), Linux(Docker python:3.12-slim)
+  - 실기: Windows 11 + PowerShell 5.1 + cmd + Git Bash 에서 adopt(work/han/dami) 후 env·토큰 주인 확인, Linux 컨테이너 bash/zsh 실행 확인
+  - macOS: OS mock 단위 테스트만. 실기 재검증 필요
 
-## 이전 버전
+## 알려진 제약
 
-- v0.4.4: macOS + zsh에서 add/list/edit/login/logout/unlink. 상세 이력은 `skills/account-partition/design.md` §21.
+- 토큰만 분리 모드에서 세션 목록(←← / `/resume`)으로 다른 계정이 띄운 세션에 참여하면 그 세션을 띄운 계정 토큰이 쓰인다 (Claude Code 구조, 래퍼로 해결 불가)
+- `CLAUDE_SECURESTORAGE_CONFIG_DIR` 은 문서화되지 않은 내부 변수 (2.1.292 기준)
 
-## 미반영 후보 (v0.6+)
+## 다음 후보 (v0.6+)
 
+- macOS 실기 재검증 (zsh 블록, 키체인 이름, `keychain_delete`)
 - Codex 리뷰 P1-2(활성 세션 게이트 정밀도), P1-4(`claude auth` feature-detect), P2(SKILL 템플릿 통일, CHANGELOG)
 - fish 자동 기록
+- edit 흐름의 registry 연동 (현재는 `~/.claude-<name>` 경로 가정)
