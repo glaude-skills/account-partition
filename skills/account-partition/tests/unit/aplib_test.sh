@@ -191,6 +191,26 @@ else
   ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 모든 셸에서 side 블록 제거"
 fi
 
+echo "── 기본 계정(~/.claude)에 이름 붙이기"
+mkdir -p "$H/.claude"; echo 'tok' > "$H/.claude/.credentials.json"
+plan=$(AP plan-add --name main --mode standard --config-dir "$H/.claude" --shared plugins --registry "$H/accounts.json")
+if [[ "$plan" == *'"create_dir"'* || "$plan" == *'"create_symlink"'* || "$plan" == *'"dir_absent"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 기본 계정 add 가 폴더·링크를 건드림"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 기본 계정 add 는 폴더·링크를 만들지 않음"
+fi
+echo "$plan" | PLAN_DIR="$sb/state" bash "$SCRIPTS/plan-execute.sh" >/dev/null
+runout=$(CLAUDE_CONFIG_DIR=x CLAUDE_SECURESTORAGE_CONFIG_DIR=y AP run main --registry "$H/accounts.json" -- "$AP_PYTHON" -c "import os; print('CLAUDE_CONFIG_DIR' in os.environ, 'CLAUDE_SECURESTORAGE_CONFIG_DIR' in os.environ)")
+assert_eq "$runout" "False False" "기본 계정 run: 두 env 모두 지움"
+plan=$(AP plan-unlink --name main --registry "$H/accounts.json")
+if [[ "$plan" == *'"auth_logout"'* || "$plan" == *'"archive_dir"'* || "$plan" == *'"remove_dir"'* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 기본 계정 unlink 가 로그아웃·폴더 정리를 함"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 기본 계정 unlink 는 셸 정의만 제거"
+fi
+echo "$plan" | PLAN_DIR="$sb/state" bash "$SCRIPTS/plan-execute.sh" >/dev/null
+assert_eq "$(cat "$H/.claude/.credentials.json")" "tok" "기본 계정 토큰 보존"
+
 echo "── unlink 안전장치"
 AP plan-adopt --name work --registry "$H/accounts.json" | PLAN_DIR="$sb/state" bash "$SCRIPTS/plan-execute.sh" >/dev/null
 out=$(AP plan-unlink --name work --registry "$H/accounts.json" 2>&1)

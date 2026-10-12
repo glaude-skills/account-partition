@@ -65,13 +65,18 @@ SCRIPTS="$SKILL_DIR/scripts"
       아무것도 공유 안 함
   - 직접 선택
       항목별로 직접 토글 (거울 모드 = 전부 선택)
+  - 지금 계정에 이름 붙이기
+      지금 로그인된 기본 계정(~/.claude)을 이 이름으로도 부른다. 폴더·로그인 변경 없음
 ```
+
+"지금 계정에 이름 붙이기"는 기본 계정에 이미 이름이 붙어 있으면(registry 에 `config_dir` 가 `~/.claude` 인 standard 계정) 선택지에서 뺀다.
 
 매핑:
 - 기본 분리 → `--mode standard --shared plugins,skills,commands,agents`
 - 완전 격리 → `--mode standard --shared ""`
 - 직접 선택 → Step 2a 후 `--mode standard --shared <csv>`
 - 토큰만 분리 → Step 2b
+- 지금 계정에 이름 붙이기 → `--mode standard --config-dir "$HOME/.claude"` (공유 항목 없음). Step 3·5·10 은 건너뛴다. 생성된 명령은 `CLAUDE_CONFIG_DIR`·`CLAUDE_SECURESTORAGE_CONFIG_DIR` 를 둘 다 지우고 `claude` 를 띄운다. unlink 해도 셸 정의만 걷어내고 로그인·폴더는 그대로다
 
 ### Step 2a. (직접 선택) 항목별 multiSelect
 
@@ -132,7 +137,7 @@ bash "$SCRIPTS/ap.sh" targets
 
 자동 → 플래그 없음, 수동 → `--manual`. `warnings`(예: `~/bin` 이 PATH 에 없음)가 있으면 함께 보여준다.
 
-### Step 5. 활성 세션 게이트 (standard 만)
+### Step 5. 활성 세션 게이트 (standard 이고 기본 계정이 아닐 때만)
 
 ```bash
 bash "$SCRIPTS/safety.sh" check-active "$HOME/.claude-<name>"

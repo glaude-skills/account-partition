@@ -1031,6 +1031,10 @@ def plan_add(name: str, mode: str, config_dir: str, token_dir: str | None, share
         acct.update({"config_dir": cfg_rel, "token_dir": tok_rel})
         ops.append({"op": "create_dir", "path": from_home_rel(tok_rel), "mode": "0700"})
         preconditions.append({"check": "dir_absent", "path": from_home_rel(tok_rel)})
+    elif is_default_config(cfg_rel):
+        # 기본 계정에 이름 붙이기: 지금 로그인된 ~/.claude 를 그대로 쓰고 env 는 둘 다 지운다.
+        # 폴더를 만들거나 링크하지 않는다 (unlink 도 셸 정의만 걷어낸다)
+        acct.update({"config_dir": cfg_rel, "token_dir": None, "shared": []})
     else:
         acct.update({"config_dir": cfg_rel, "token_dir": None})
         cfg_abs = from_home_rel(cfg_rel)
