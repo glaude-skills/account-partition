@@ -1,43 +1,49 @@
-# 셸 통합 참조
+# 셸 통합 참조 (v0.5)
 
-## 지원 셸
+## 지원 셸과 대상 파일
 
-| 셸 | v1 지원 | 자동 편집 대상 파일 |
-|---|---|---|
-| zsh | ✓ | `~/.zshrc` |
-| bash | (수동 안내만) | `~/.bashrc` 또는 `~/.bash_profile` |
-| fish | (수동 안내만) | `~/.config/fish/config.fish` |
-| 그 외 | (수동 안내만) | — |
+| kind | OS | 자동 편집 대상 | 감지 조건 |
+|---|---|---|---|
+| `zsh` | macOS, Linux | `~/.zshrc` | `zsh` 실행 파일 또는 `~/.zshrc` 존재 |
+| `bash` | macOS, Linux, Windows(Git Bash) | `~/.bashrc` | `bash` 실행 파일 존재 |
+| `powershell` | Windows (5.1, 7), macOS·Linux (pwsh) | 각 에디션의 `$PROFILE.CurrentUserCurrentHost` | `powershell`/`pwsh` 존재. 경로는 `-NoProfile`로 질의 (OneDrive 문서 폴더 대응) |
+| `cmd` | Windows | `~/bin/claude-<name>.cmd` + `~/bin/claude-<name>` (sh 래퍼) | 항상 (PATH 에 없으면 경고만) |
+| fish 등 | — | 수동 안내 | — |
 
-자동 편집은 zsh + `~/.zshrc` 한정. 그 외는 사용자가 명령 라인을 복사·붙여넣기.
+감지된 **모든** 대상에 같은 정의를 한 번에 기록한다. 셸마다 정의가 달라 실행 셸에 따라 다른 계정 구성이 뜨는 문제를 막기 위해서다. 확인: `bash "$SCRIPTS/ap.sh" targets`. `AP_TARGETS`(JSON 배열)로 감지 결과를 대체할 수 있다.
 
-## Alias 라인 형식
+## 블록 형식
+
+모든 블록은 시작/끝 마커로 감싼다. 생성 내용은 ASCII 전용이다.
+
+```
+# >>> account-partition: <name> >>>
+...
+# <<< account-partition: <name> <<<
+```
+
+예시와 설계 근거는 `docs/work/multi-os-token-partition/design.md` §5 참고. 요점:
+
+- **env 누수 차단**: zsh/bash 는 `env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR ...`, PowerShell 은 `try/finally` 로 원래 값 복구, cmd 는 `setlocal`.
+- **기본 계정(`~/.claude`)** 은 `CLAUDE_CONFIG_DIR` 를 설정하지 않고 지운다. macOS 키체인 항목 이름이 "변수 없음"과 "`~/.claude` 명시"에서 달라서, 명시하면 다시 로그인해야 한다.
+- **Windows 경로**: 모든 셸이 `C:\Users\<me>\.claude-x` 라는 같은 문자열을 넘기도록 bash 블록도 `"$USERPROFILE\.claude-x"` 를 쓴다. 문자열이 다르면 데몬과 세션 목록이 갈라진다.
+- **PowerShell**: `claude` 함수나 alias 가 있어도 `Get-Command claude -CommandType Application` 으로 실제 실행 파일을 부른다.
+
+## v0.4 형식 호환
 
 ```
 # account-partition: <name>
 alias claude-<name>="CLAUDE_CONFIG_DIR=$HOME/.claude-<name> command claude"
 ```
 
-- 관리 주석(`# account-partition: <name>`) 필수 — 스킬이 자동 편집할 때 식별자.
-- `command claude` — 셸 함수보다 우선해서 실제 `claude` 바이너리 호출.
-- `$HOME` 사용 — `~` 확장 문제 회피.
+remove 와 교체 대상으로 인식한다. 같은 이름을 다시 기록하면 새 형식으로 바뀐다.
 
-## Idempotency
+## 외부 정의
 
-같은 `<name>`으로 add 호출 시:
-1. 기존 marker 블록(`# account-partition: <name>` 및 다음 라인) 제거
-2. 새 marker 블록 추가
-3. 라인 수 동일 유지
+마커 없는 `claude-*` 정의(alias, 함수, PowerShell 함수, `~/bin` 래퍼)는 list 에서 "외부" 로 보이고, `account-partition:adopt` 로만 수정한다. 해석 규칙은 adopt SKILL.md 참고.
 
-## 외부 alias 처리
+## 파일 편집 규칙
 
-스킬이 만들지 않은(주석 없는) `claude-*` alias는:
-- 조회(`list` subcommand)에서 `:external` 라벨로 표시됨
-- 자동 수정·삭제 **안 함**
-- 사용자가 직접 편집해야 함
-
-이유: 손으로 만든 alias·함수·다중 라인·source 분기 등의 모서리 케이스가 안전한 자동 처리를 어렵게 함. v2 후속 과제.
-
-## 자동 편집 시 백업
-
-`~/.zshrc.bak.<YYYYMMDD-HHMMSS>-<pid>` 형식으로 백업 생성. 백업은 자동 삭제되지 않음.
+- 줄 단위 편집은 바이트 수준으로 한다. UTF-8(BOM 유무 무관)과 CP949 모두 기존 내용이 보존된다.
+- 줄바꿈은 기존 파일 스타일(CRLF/LF)을 따른다. 새 PowerShell 프로필은 UTF-8 BOM + CRLF.
+- 모든 쓰기 전에 `<file>.bak.<YYYYMMDD-HHMMSS>-<pid>` 백업을 만든다. 롤백은 백업으로 복원한다. 백업은 자동 삭제되지 않는다.

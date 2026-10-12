@@ -29,7 +29,13 @@ HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" SCRIPTS_DIR="$SCRIPTS" \
   bash "$SCRIPTS/matrix.sh"
 ```
 
-stdout 그대로 출력. 부가 정보 함께:
+stdout 그대로 출력. v0.5 부터 마지막에 **셸 명령 정의** 섹션이 붙는다:
+
+- "스킬 관리": registry 계정의 모드(일반/토큰만 분리), config·토큰 폴더, 등록된 셸
+- "외부": 손으로 만든 정의. 셸마다 정의가 다르면 `⚠` 경고가 붙는다 → `/account-partition:adopt` 로 통일하라고 안내
+- 토큰만 분리 계정이 있으면 한 줄 안내: "세션 목록에서 다른 계정이 띄운 세션에 참여하면 그 세션을 띄운 계정 토큰이 쓰입니다."
+
+부가 정보 함께:
 
 ### 무시된 후보
 

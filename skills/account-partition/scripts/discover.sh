@@ -10,6 +10,7 @@
 #   SHARED_POOL  (기본: $HOME/.claude-shared)
 
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
 HOME="${HOME:?HOME is required}"
 SHARED_POOL="${SHARED_POOL:-$HOME/.claude-shared}"
@@ -68,8 +69,10 @@ meta_for_dir() {
   if [[ -f "$dir/.claude.json" ]]; then
     email=$(CLAUDE_JSON_PATH="$dir/.claude.json" python3 -c "
 import json, os, sys
+sys.path.insert(0, os.path.dirname(os.environ['AP_LIB']))
+from aplib import npath
 try:
-    with open(os.environ['CLAUDE_JSON_PATH']) as f:
+    with open(npath(os.environ['CLAUDE_JSON_PATH']), encoding='utf-8') as f:
         d = json.load(f)
     print(d.get('oauthAccount', {}).get('emailAddress', ''))
 except Exception:

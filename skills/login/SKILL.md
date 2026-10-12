@@ -45,6 +45,22 @@ except: print('— (확인 실패)')
 done
 ```
 
+
+**v0.5 registry 계정 (멀티 OS · 토큰만 분리 포함)** — 아래 계정은 폴더가 아니라 registry 정의로 상태를 본다. 위 목록과 이름이 겹치면 이쪽을 우선한다:
+
+```bash
+bash "$SCRIPTS/ap.sh" accounts > /tmp/ap-accounts.json
+for n in $(python3 -c "import json; print(' '.join(json.load(open('/tmp/ap-accounts.json', encoding='utf-8'))['registry']['accounts']))"); do
+  st=$(bash "$SCRIPTS/ap.sh" run "$n" -- claude auth status 2>/dev/null | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin); print('✓ ' + d.get('email','') if d.get('loggedIn') else '— (로그인 안 됨)')
+except Exception: print('— (확인 실패)')
+")
+  echo "  claude-$n: $st"
+done
+```
+
 **`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
 
 - 각 alias: 라벨 `claude-<name>`, description은 위 status 결과 (`✓ <email>` 또는 `— (로그인 안 됨)`)
@@ -73,6 +89,7 @@ done
 ### Step 2. CONFIG_DIR 결정
 
 선택된 alias의 디렉토리 (`$HOME/.claude-<name>` 또는 default `$HOME/.claude`).
+**registry 계정이면** 폴더를 직접 쓰지 않고 Step 4·5 를 `bash "$SCRIPTS/ap.sh" run <name> -- claude auth ...` 로 실행한다 (토큰 폴더 env 까지 정확히 재현). 토큰만 분리 계정은 Step 3 게이트를 건너뛴다 (공유 config 폴더라 기준 계정 세션이 항상 잡힘).
 
 ### Step 3. 활성 세션 게이트
 
@@ -87,6 +104,8 @@ bash "$SCRIPTS/safety.sh" check-active "<CONFIG_DIR>"
 ```bash
 echo "브라우저가 열립니다. Anthropic 페이지에서 인증 완료 후 자동으로 돌아옵니다..."
 CLAUDE_CONFIG_DIR="<CONFIG_DIR>" claude auth login
+# registry 계정:
+bash "$SCRIPTS/ap.sh" run "<name>" -- claude auth login
 ```
 
 (timeout 길게 — 사용자가 브라우저 인증 시간 필요)
@@ -95,6 +114,8 @@ CLAUDE_CONFIG_DIR="<CONFIG_DIR>" claude auth login
 
 ```bash
 CLAUDE_CONFIG_DIR="<CONFIG_DIR>" claude auth status
+# registry 계정:
+bash "$SCRIPTS/ap.sh" run "<name>" -- claude auth status
 ```
 
 JSON 파싱해서 `loggedIn=true` + email 확인. 성공이면 결과 표시:

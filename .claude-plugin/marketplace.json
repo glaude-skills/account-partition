@@ -1,14 +1,14 @@
 {
   "name": "account-partition",
-  "description": "Plugin for managing multiple Claude CLI OAuth accounts via aliases (macOS+zsh)",
+  "description": "Plugin for managing multiple Claude CLI OAuth accounts (macOS, Linux, Windows)",
   "owner": {
     "name": "gang00"
   },
   "plugins": [
     {
       "name": "account-partition",
-      "description": "Manage multiple Claude CLI OAuth accounts via CLAUDE_CONFIG_DIR aliases. v0.4: unlink fully automated.",
-      "version": "0.4.4",
+      "description": "Manage multiple Claude CLI OAuth accounts via shell commands on macOS, Linux and Windows (zsh/bash/PowerShell/cmd). v0.5: multi-OS, token-only partition, adopt.",
+      "version": "0.5.0",
       "source": "./",
       "author": {
         "name": "gang00"

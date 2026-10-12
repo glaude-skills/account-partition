@@ -1,123 +1,59 @@
 #!/usr/bin/env bash
-# zshrc alias 라인 자동 편집·발견.
+# 셸 설정 파일의 관리 블록 편집·발견 (단일 파일 단위, 저수준).
+# 여러 셸에 동시 기록하는 고수준 흐름은 ap.sh plan-add / plan-adopt / plan-unlink 를 쓴다.
 # 사용:
-#   shell-rc.sh add <rc> <name> <config_dir>     → 주석 블록 + alias 추가/교체 (idempotent)
-#   shell-rc.sh remove <rc> <name>               → 스킬 관리 블록만 제거
-#   shell-rc.sh list <rc>                        → 발견된 alias 한 줄씩: "name:source" (managed|external)
-#   shell-rc.sh render <name> <config_dir>       → alias 라인만 출력 (수동 안내용)
+#   shell-rc.sh add <rc> <name> <config_dir> [<kind>]  → 관리 블록 추가/교체 (idempotent). kind: posix(기본)|powershell
+#   shell-rc.sh remove <rc> <name>                     → 관리 블록만 제거 (v0.4 형식 포함)
+#   shell-rc.sh list <rc> [<kind>]                     → "name:managed" / "name:external" 한 줄씩
+#   shell-rc.sh render <name> <config_dir> [<kind>]    → 블록 텍스트만 출력 (수동 안내용)
 #
-# 자동 편집은 '# account-partition: <name>' 주석 블록만 대상.
-# 외부 alias는 list로 발견까지만, 수정 안 함.
+# 자동 편집은 '# >>> account-partition: <name> >>>' 블록(및 v0.4 '# account-partition: <name>' + alias)만 대상.
+# 외부 정의는 list 로 발견까지만, 수정은 adopt 흐름에서만.
 
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
-MARKER_PREFIX="# account-partition:"
-
-render_alias_line() {
-  local name="$1"
-  local config_dir="$2"
-  echo "alias claude-${name}=\"CLAUDE_CONFIG_DIR=${config_dir} command claude\""
-}
-
-render_block() {
-  local name="$1"
-  local config_dir="$2"
-  echo "${MARKER_PREFIX} ${name}"
-  render_alias_line "$name" "$config_dir"
-}
-
-add_alias() {
-  local rc="$1"
-  local name="$2"
-  local config_dir="$3"
-
-  remove_alias "$rc" "$name"
-
-  # 파일 끝 개행 보장
-  if [[ -s "$rc" ]] && [[ -n "$(tail -c 1 "$rc")" ]]; then
-    printf '\n' >> "$rc"
-  fi
-  render_block "$name" "$config_dir" >> "$rc"
-}
-
-remove_alias() {
-  local rc="$1"
-  local name="$2"
-  [[ -f "$rc" ]] || return 0
-
-  RC_PATH="$rc" REMOVE_NAME="$name" python3 -c "
-import os, re, sys
-rc = os.environ['RC_PATH']
-name = os.environ['REMOVE_NAME']
-marker_re = re.compile(r'^# account-partition:\s*' + re.escape(name) + r'\s*\$')
-alias_re = re.compile(r'^\s*alias\s+claude-' + re.escape(name) + r'\s*=')
-
-with open(rc) as f:
-    lines = f.readlines()
-
-new_lines = []
-i = 0
-while i < len(lines):
-    if marker_re.match(lines[i]):
-        # marker matched — check if next line is the expected alias
-        if i + 1 < len(lines) and alias_re.match(lines[i + 1]):
-            # both marker and alias line: skip both
-            i += 2
-        else:
-            # next line is not the expected alias: remove marker only, preserve next line
-            sys.stderr.write('account-partition: remove_alias: marker next line is not alias claude-' + name + ' — preserved\\n')
-            i += 1
-        continue
-    new_lines.append(lines[i])
-    i += 1
-
-with open(rc, 'w') as f:
-    f.writelines(new_lines)
-"
-}
-
-list_aliases() {
-  local rc="$1"
-  [[ -f "$rc" ]] || return 0
-
-  RC_PATH="$rc" python3 -c "
-import os, re
-rc = os.environ['RC_PATH']
-managed_re = re.compile(r'^# account-partition:\s*(\S+)\s*$')
-alias_re = re.compile(r'^\s*alias\s+claude-([A-Za-z0-9_-]+)\s*=')
-
-with open(rc) as f:
-    lines = f.readlines()
-
-managed = set()
-external = set()
-i = 0
-while i < len(lines):
-    m = managed_re.match(lines[i])
-    if m and i + 1 < len(lines):
-        am = alias_re.match(lines[i+1])
-        if am and am.group(1) == m.group(1):
-            managed.add(m.group(1))
-            i += 2
-            continue
-    a = alias_re.match(lines[i])
-    if a:
-        external.add(a.group(1))
-    i += 1
-
-for n in sorted(managed):
-    print(f'{n}:managed')
-for n in sorted(external - managed):
-    print(f'{n}:external')
+_acct_json() {
+  CFG="$1" python3 -c "
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.environ['AP_LIB']))
+import aplib
+print(json.dumps({'mode': 'standard', 'config_dir': aplib.to_home_rel(os.environ['CFG']), 'token_dir': None}))
 "
 }
 
 cmd="${1:-help}"
 case "$cmd" in
-  add)    add_alias "${2:?Usage: $0 add <rc> <name> <config_dir>}" "${3:?name required}" "${4:?config_dir required}" ;;
-  remove) remove_alias "${2:?Usage: $0 remove <rc> <name>}" "${3:?name required}" ;;
-  list)   list_aliases "${2:?Usage: $0 list <rc>}" ;;
-  render) render_alias_line "${2:?Usage: $0 render <name> <config_dir>}" "${3:?config_dir required}" ;;
+  add)
+    rc="${2:?Usage: $0 add <rc> <name> <config_dir> [kind]}"; name="${3:?name required}"; cfg="${4:?config_dir required}"
+    python3 "$AP_LIB" block-write "$rc" "$name" "${5:-posix}" "$(_acct_json "$cfg")"
+    ;;
+  remove)
+    python3 "$AP_LIB" block-remove "${2:?Usage: $0 remove <rc> <name>}" "${3:?name required}" >/dev/null
+    ;;
+  list)
+    rc="${2:?Usage: $0 list <rc> [kind]}"; kind="${3:-posix}"
+    RC="$rc" KIND="$kind" python3 -c "
+import os, sys
+sys.path.insert(0, os.path.dirname(os.environ['AP_LIB']))
+import aplib
+managed = set(aplib.list_blocks(os.environ['RC']))
+ext = {e['name'] for e in aplib.parse_rc_externals(os.environ['RC'], os.environ['KIND'])}
+for n in sorted(managed):
+    print(f'{n}:managed')
+for n in sorted(ext - managed):
+    print(f'{n}:external')
+"
+    ;;
+  render)
+    name="${2:?Usage: $0 render <name> <config_dir> [kind]}"; cfg="${3:?config_dir required}"
+    NAME="$name" KIND="${4:-posix}" ACCT="$(_acct_json "$cfg")" python3 -c "
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.environ['AP_LIB']))
+import aplib
+print('\n'.join(aplib.render(os.environ['KIND'], os.environ['NAME'], json.loads(os.environ['ACCT']))))
+"
+    ;;
   *)
     echo "Usage: $0 {add|remove|list|render} ..." >&2
     exit 1

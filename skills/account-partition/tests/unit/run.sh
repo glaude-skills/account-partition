@@ -5,6 +5,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")"
 
+# 결정적 테스트: 실제 셸 대상 감지(PowerShell 질의 등)를 끈다. 개별 테스트가 필요 시 덮어쓴다.
+export AP_TARGETS="${AP_TARGETS:-[]}"
+
 TOTAL_PASS=0
 TOTAL_FAIL=0
 FAILED_FILES=()

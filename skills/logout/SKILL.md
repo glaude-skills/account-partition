@@ -42,6 +42,22 @@ for d in $(HOME="$HOME" SHARED_POOL="$HOME/.claude-shared" bash "$SCRIPTS/discov
 done
 ```
 
+
+**v0.5 registry 계정 (멀티 OS · 토큰만 분리 포함)** — 아래 계정은 폴더가 아니라 registry 정의로 상태를 본다. 로그인된 것만 선택지에 넣는다. 위 목록과 이름이 겹치면 이쪽을 우선한다:
+
+```bash
+bash "$SCRIPTS/ap.sh" accounts > /tmp/ap-accounts.json
+for n in $(python3 -c "import json; print(' '.join(json.load(open('/tmp/ap-accounts.json', encoding='utf-8'))['registry']['accounts']))"); do
+  st=$(bash "$SCRIPTS/ap.sh" run "$n" -- claude auth status 2>/dev/null | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin); print('✓ ' + d.get('email','') if d.get('loggedIn') else '— (로그인 안 됨)')
+except Exception: print('— (확인 실패)')
+")
+  echo "  claude-$n: $st"
+done
+```
+
 선택지가 0개(기본 계정 옵션 포함 전)여도 "기본 계정(claude) 로그아웃" 옵션은 항상 추가된다.
 
 **`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
@@ -90,12 +106,18 @@ bash "$SCRIPTS/safety.sh" check-active "<CONFIG_DIR>"
 
 ```bash
 CLAUDE_CONFIG_DIR="<CONFIG_DIR>" claude auth logout
+# registry 계정:
+bash "$SCRIPTS/ap.sh" run "<name>" -- claude auth logout
 ```
+
+토큰만 분리 계정은 Step 3 게이트를 건너뛰고, 실행 전 한 줄 경고: "토큰은 이 계정 폴더에서만 지워지지만, 공유 `.claude.json` 의 표시 계정 정보가 비워져 기준 계정 화면의 이메일 표시가 잠시 사라질 수 있습니다 (기준 계정 로그인 자체는 유지)."
 
 ### Step 5. 결과 검증
 
 ```bash
 CLAUDE_CONFIG_DIR="<CONFIG_DIR>" claude auth status
+# registry 계정:
+bash "$SCRIPTS/ap.sh" run "<name>" -- claude auth status
 ```
 
 `loggedIn=false`이면 성공. 결과 표시:

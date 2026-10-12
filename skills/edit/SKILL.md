@@ -35,6 +35,8 @@ SCRIPTS="$SKILL_DIR/scripts"
 스킬 관리 계정만 (default `~/.claude` 제외):
 ```bash
 bash "$SCRIPTS/shell-rc.sh" list ~/.zshrc | grep ":managed$" | cut -d: -f1
+# v0.5 registry 계정 (일반 모드만 — 토큰만 분리 계정은 공유 항목 개념이 없어 제외)
+bash "$SCRIPTS/ap.sh" accounts | python3 -c "import json,sys; d=json.load(sys.stdin); [print(n) for n,a in d['registry']['accounts'].items() if a['mode']!='token-only' and a['config_dir']!='~/.claude']"
 # 결과에서 이름이 없는 default 항목이 있으면 제외
 ```
 

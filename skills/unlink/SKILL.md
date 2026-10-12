@@ -1,11 +1,11 @@
 ---
 name: unlink
-description: "Claude CLI 계정 연동 해제 — auth logout + zshrc alias 제거 + config dir 백업·제거를 단일 흐름으로 자동화."
+description: "Claude CLI 계정 연동 해제 — 로그아웃(또는 토큰 폴더 정리) + 모든 셸의 claude-<이름> 정의 제거 + 폴더 백업·제거를 단일 흐름으로 자동화. macOS·Linux·Windows."
 ---
 
 # 계정 연동 해제
 
-선택한 alias의 OAuth 로그아웃 + zshrc 라인 제거 + config dir 백업·제거를 한 번에. operation plan + 활성 세션 게이트 + 백업으로 보호.
+선택한 계정의 로그아웃 + 모든 셸(zsh/bash/PowerShell/cmd 래퍼)의 정의 제거 + 폴더 백업·제거를 한 번에. operation plan + 활성 세션 게이트 + 백업으로 보호.
 
 ## 호출 시 announce
 
@@ -29,23 +29,33 @@ SCRIPTS="$SKILL_DIR/scripts"
 **선택지 수집**:
 
 ```bash
+bash "$SCRIPTS/ap.sh" accounts > /tmp/ap-accounts.json
+# REGISTRY: v0.5 계정 registry(~/.claude-shared/accounts.json) — 모든 셸에서 자동 정리
+python3 -c "import json; d=json.load(open('/tmp/ap-accounts.json', encoding='utf-8')); [print(n, a['mode'], a['config_dir'], a.get('token_dir') or '') for n, a in d['registry']['accounts'].items()]"
+# LEGACY: v0.4 로 만든 zsh 관리 블록 (registry 에 없음)
 MANAGED=$(bash "$SCRIPTS/shell-rc.sh" list ~/.zshrc | grep ":managed$" | cut -d: -f1)
-EXTERNAL=$(bash "$SCRIPTS/shell-rc.sh" list ~/.zshrc | grep ":external$" | cut -d: -f1)
+# EXTERNAL: 손으로 만든 정의 (모든 셸)
+python3 -c "import json; d=json.load(open('/tmp/ap-accounts.json', encoding='utf-8')); [print(e['name']) for e in d['externals'] if not e['in_registry']]"
 ```
 
 default `~/.claude`는 **항상 선택지에서 제외** (실수 방지). 0개면 "정리할 alias 없음" 안내 후 종료.
 
 **`AskUserQuestion` 호출** — 최대 4개 옵션 안에:
 
-- 각 managed alias: 라벨 `claude-<name> (스킬 관리)`, description "자동 unlink. auth_logout + zshrc 라인 제거 + config dir tar 백업 후 제거."
-- 각 external alias: 라벨 `claude-<name> (외부)`, description "수동 명령 출력만. v0.4 자동 unlink 미지원."
+- 각 registry 계정: 라벨 `claude-<name>`, description 은 모드별로
+  - 일반: "자동. 로그아웃 + 모든 셸 정의 제거 + config 폴더 tar 백업 후 제거"
+  - 토큰만 분리: "자동. 토큰 폴더 tar 백업 후 제거 + 모든 셸 정의 제거. 공유 config 폴더는 그대로"
+  - 기본 계정(`~/.claude`)을 쓰는 정의: "셸 정의만 제거 (기본 계정은 로그아웃·삭제 안 함)"
+- 각 LEGACY(v0.4 zsh 관리) alias: 라벨 `claude-<name> (v0.4)`, description "자동 unlink (zsh)"
+- 각 external: 라벨 `claude-<name> (외부)`, description "먼저 가져오기(adopt) 후 자동 unlink 가능"
 - 마지막은 항상 **"취소"** (description "unlink 안 함, 종료")
 
 옵션 수가 4개를 넘으면 managed 우선, external 다음, 취소는 항상 포함.
 
 선택 결과:
-- managed → Step 2로 (자동 unlink)
-- external → Step 1a (수동 안내)
+- registry 계정 → Step 3R (registry 경로)
+- v0.4 managed → Step 2로 (기존 자동 unlink)
+- external → `AskUserQuestion` "가져온 뒤 unlink / 수동 안내 / 취소". 가져오기는 account-partition:adopt 실행 후 이 스킬로 돌아온다. 수동은 Step 1a
 - 취소 → 종료
 
 ### Step 1a. 외부 alias 선택 시 (수동 안내)
@@ -64,6 +74,18 @@ echo "  3) 계정 디렉토리 백업 후 제거:"
 echo "     tar czf ~/.claude-<name>.removed.\$(date +%Y%m%d-%H%M%S).tar.gz -C ~ .claude-<name>"
 echo "     rm -rf ~/.claude-<name>"
 ```
+
+### Step 3R. (registry 계정) Plan 생성
+
+```bash
+bash "$SCRIPTS/ap.sh" plan-unlink --name "<name>" > /tmp/account-partition-plan.json
+```
+
+- 토큰만 분리 계정이 기대고 있는 기준 계정이면 plan 생성이 **거부**된다 (공유 config 폴더 보호). 메시지에 나온 의존 계정을 먼저 unlink 하라고 안내하고 종료.
+- 일반 계정이면 plan 의 `preconditions` 에 활성 세션 게이트가 들어 있다 → Step 2 의 check-active 를 `<config 폴더>` 로 실행.
+- 토큰만 분리 계정은 `claude auth logout` 대신 토큰 폴더를 아카이브한다 (logout 이 공유 `.claude.json` 의 표시 계정까지 지울 수 있기 때문). macOS 는 해당 키체인 항목도 삭제.
+
+이후 Step 4 (미리보기)부터 같다. 결과 출력은 "모든 셸에서 claude-<name> 제거" 로 안내.
 
 ### Step 2. 활성 세션 게이트
 
@@ -131,7 +153,7 @@ bash "$SCRIPTS/safety.sh" unlock "$HOME/.claude-<name>" "$$"
 ```
 <name> 계정 연동 해제 완료
   · OAuth 로그아웃 (keychain entry 자동 정리)
-  · ~/.zshrc 라인 제거
+  · 셸 정의 제거 (zsh/bash/PowerShell/cmd 래퍼 — 각 파일 백업)
   · 계정 디렉토리 → <백업 파일 경로>
 
 새 터미널에서 'claude-<name>' 명령이 더 이상 동작하지 않음.

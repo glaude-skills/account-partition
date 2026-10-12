@@ -99,3 +99,30 @@ cleanup_sandbox() {
   local sb="$1"
   [[ -d "$sb" ]] && rm -rf "$sb"
 }
+
+# ── 멀티 OS 헬퍼 (v0.5) ──
+is_windows() {
+  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; *) return 1 ;; esac
+}
+
+# 스크립트가 셸 블록에 기록하는 형태의 경로 (Windows 는 백슬래시 네이티브 경로)
+native_path() {
+  if is_windows; then
+    # 홈 아래 경로는 셸 블록에 "$USERPROFILE\..." 형태로 기록된다 — 홈 이후 부분만 비교
+    local w up
+    w=$(cygpath -w "$1"); up=$(cygpath -w "$USERPROFILE")
+    if [[ "${w,,}" == "${up,,}\\"* ]]; then echo "${w:${#up}}"; else echo "$w"; fi
+  else
+    echo "$1"
+  fi
+}
+
+# 두 경로가 같은 실체를 가리키는지 (symlink, junction, Windows 하드링크 대체 포함)
+assert_same_file() {
+  local a="$1" b="$2" msg="${3:-same file: $1 == $2}"
+  if [[ "$a" -ef "$b" ]]; then
+    ASSERT_PASS=$((ASSERT_PASS + 1)); echo -e "  ${GREEN}✓${NC} $msg"
+  else
+    ASSERT_FAIL=$((ASSERT_FAIL + 1)); ASSERT_FAILURES+=("$msg"); echo -e "  ${RED}✗${NC} $msg"
+  fi
+}

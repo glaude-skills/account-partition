@@ -3,6 +3,7 @@
 # 사용: echo "$plan_json" | plan-render.sh
 
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
 export PLAN_JSON
 PLAN_JSON=$(cat)
@@ -25,11 +26,18 @@ action_label = {
   "edit": "공유 항목 수정",
   "delete": "계정 연동 해제",
   "unlink": "연동 해제",
+  "adopt": "기존 정의 가져오기",
 }.get(md.get("action", ""), md.get("action", "?"))
 
 alias = md.get("alias_name", "?")
-print(f"다음 작업을 실행합니다 ({action_label} — claude-{alias}):")
+mode_note = " · 토큰만 분리" if md.get("mode") == "token-only" else ""
+print(f"다음 작업을 실행합니다 ({action_label} — claude-{alias}{mode_note}):")
 print()
+if md.get("mode") == "token-only" and md.get("token_dir"):
+  print(f"  설정 폴더(공유)  {md.get('config_dir')}")
+  print(f"  토큰 폴더(분리)  {md.get('token_dir')}")
+  print()
+KIND_LABEL = {"posix": "zsh/bash", "powershell": "PowerShell"}
 
 ITEM_LABEL = {
   "plugins":      "플러그인",
@@ -75,9 +83,29 @@ for op in ops:
     print(f"  제거       {op['file']} 에서 marker '{op['marker']}' 블록 제거")
   elif kind == "archive_dir":
     print(f"  아카이브   {op['src']} → <src>.removed.<ts>.tar.gz")
+  elif kind == "write_block":
+    print(f"  셸 등록    [{KIND_LABEL.get(op.get('kind'), op.get('kind'))}] {op['file']}" + (" (백업 생성)" if op.get("backup") else ""))
+  elif kind == "remove_external":
+    print(f"  외부 정의 제거 [{KIND_LABEL.get(op.get('kind'), op.get('kind'))}] {op['file']} 의 claude-{op['name']} (백업 생성)")
+  elif kind == "write_file":
+    print(f"  래퍼 작성  {op['path']}" + (" (기존 파일 백업)" if op.get("backup_if_exists") else ""))
+  elif kind == "remove_file":
+    print(f"  파일 제거  {op['path']} (.bak 로 보관)")
+  elif kind == "registry_put":
+    print(f"  계정 등록  {op['registry']} ← {op['name']}")
+  elif kind == "registry_delete":
+    print(f"  계정 삭제  {op['registry']} 에서 {op['name']}")
+  elif kind == "keychain_delete":
+    print(f"  키체인 삭제 {op['service']} (macOS, 없으면 무시)")
   else:
     print(f"  ?          {kind}: {op}")
 
+warnings = md.get("warnings") or []
+if warnings:
+  print()
+  print("주의:")
+  for w in warnings:
+    print(f"  · {w}")
 print()
 print("진행할까요? (예 / 아니오 / 명령 출력만)")
 PYEOF

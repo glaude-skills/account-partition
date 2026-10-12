@@ -13,17 +13,18 @@ touch "$rc"
 bash "$SCRIPTS/shell-rc.sh" add "$rc" "work" "$sb/.claude-work"
 
 content=$(cat "$rc")
-assert_contains "$content" "# account-partition: work" "관리 주석 추가"
-assert_contains "$content" 'alias claude-work=' "alias 라인 추가"
-assert_contains "$content" 'CLAUDE_CONFIG_DIR' "CLAUDE_CONFIG_DIR 포함"
-assert_contains "$content" "$sb/.claude-work" "CONFIG_DIR 경로 포함"
+assert_contains "$content" "# >>> account-partition: work >>>" "관리 블록 시작 마커"
+assert_contains "$content" "# <<< account-partition: work <<<" "관리 블록 끝 마커"
+assert_contains "$content" 'claude-work() {' "함수 정의 (alias 대신)"
+assert_contains "$content" 'env -u CLAUDE_CONFIG_DIR -u CLAUDE_SECURESTORAGE_CONFIG_DIR' "상속 env 제거"
+assert_contains "$content" "$(native_path "$sb/.claude-work")" "CONFIG_DIR 경로 포함"
 
 # 시나리오 2: 같은 이름 다시 add → idempotent (블록 교체, 라인 수 동일)
 old_line_count=$(wc -l < "$rc")
 bash "$SCRIPTS/shell-rc.sh" add "$rc" "work" "$sb/.claude-work-NEW"
 new_line_count=$(wc -l < "$rc")
 assert_eq "$old_line_count" "$new_line_count" "idempotent: 라인 수 동일"
-assert_contains "$(cat "$rc")" "$sb/.claude-work-NEW" "교체된 경로 반영"
+assert_contains "$(cat "$rc")" "$(native_path "$sb/.claude-work-NEW")" "교체된 경로 반영"
 
 # 시나리오 3: list — managed alias 출력
 out=$(bash "$SCRIPTS/shell-rc.sh" list "$rc")
@@ -37,7 +38,7 @@ assert_contains "$out2" "external:external" "주석 없는 외부 alias도 list 
 # 시나리오 5: remove — managed 블록만 제거
 bash "$SCRIPTS/shell-rc.sh" remove "$rc" "work"
 content_after=$(cat "$rc")
-if [[ "$content_after" == *"# account-partition: work"* ]]; then
+if [[ "$content_after" == *"account-partition: work"* ]]; then
   ASSERT_FAIL=$((ASSERT_FAIL + 1)); ASSERT_FAILURES+=("remove 후에도 marker 잔존"); echo "  ✗ marker 잔존"
 else
   ASSERT_PASS=$((ASSERT_PASS + 1)); echo "  ✓ marker 제거됨"
@@ -46,8 +47,23 @@ assert_contains "$content_after" "claude-external" "외부 alias는 remove에 �
 
 # 시나리오 6: render — alias 라인 단독 출력 (수동 안내용)
 rendered=$(bash "$SCRIPTS/shell-rc.sh" render "side" "$sb/.claude-side")
-assert_contains "$rendered" 'alias claude-side=' "render에 alias 라인"
-assert_contains "$rendered" "$sb/.claude-side" "render에 경로"
+assert_contains "$rendered" 'claude-side() {' "render에 함수 정의"
+assert_contains "$rendered" "$(native_path "$sb/.claude-side")" "render에 경로"
+
+# 시나리오 6b: v0.4 형식 블록도 remove/교체 대상
+rc4="$sb/.zshrc4"
+printf 'export KEEP=1
+# account-partition: old
+alias claude-old="CLAUDE_CONFIG_DIR=/x command claude"
+' > "$rc4"
+bash "$SCRIPTS/shell-rc.sh" add "$rc4" "old" "$sb/.claude-old"
+content4=$(cat "$rc4")
+if [[ "$content4" == *'alias claude-old='* ]]; then
+  ASSERT_FAIL=$((ASSERT_FAIL+1)); ASSERT_FAILURES+=("v0.4 alias 잔존"); echo "  ✗ v0.4 alias 잔존"
+else
+  ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ v0.4 형식 블록을 새 형식으로 교체"
+fi
+assert_contains "$content4" "export KEEP=1" "블록 밖 라인 보존"
 
 # 시나리오 7: remove — marker 다음에 비-alias 라인이 있으면 그 라인 보존
 rc3="$sb/.zshrc3"

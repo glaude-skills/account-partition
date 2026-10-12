@@ -1,3 +1,5 @@
 .DS_Store
 *.bak.*
 .account-partition-state.json
+__pycache__/
+*.pyc

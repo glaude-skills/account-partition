@@ -2,6 +2,7 @@
 # Plan JSON (stdin)을 사용자가 직접 실행 가능한 셸 명령 시퀀스로 변환.
 # '명령 출력만' 옵션에서 사용.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
 # Python heredoc이 stdin 선점하므로 먼저 capture
 PLAN_JSON=$(cat)
@@ -73,6 +74,34 @@ for op in ops:
         tmp_pat = dest_pat + ".tmp"
         print(f"tar czf {sh(tmp_pat)} -C {sh(parent)} {sh(base)}")
         print(f"tar tzf {sh(tmp_pat)} > /dev/null && mv {sh(tmp_pat)} {sh(dest_pat)}")
+    elif kind == "write_block":
+        f = op["file"]
+        print(f"# [{op.get('kind')}] {f} 에 관리 블록 추가 (같은 이름의 기존 블록이 있으면 먼저 지울 것)")
+        if op.get("backup"):
+            print(f"[ -f {sh(f)} ] && cp -p {sh(f)} {sh(f)}.bak.$(date +%Y%m%d-%H%M%S)-$$")
+        print(f"cat >> {sh(f)} <<'ACCOUNT_PARTITION_EOF'")
+        for line in op.get("lines", []):
+            print(line)
+        print("ACCOUNT_PARTITION_EOF")
+    elif kind == "remove_external":
+        print(f"# {op['file']} 에서 외부 정의 claude-{op['name']} 를 직접 지우세요 (편집기로)")
+    elif kind == "write_file":
+        p = op["path"]
+        if op.get("backup_if_exists"):
+            print(f"[ -e {sh(p)} ] && cp -p {sh(p)} {sh(p)}.bak.$(date +%Y%m%d-%H%M%S)-$$")
+        print(f"cat > {sh(p)} <<'ACCOUNT_PARTITION_EOF'")
+        for line in op.get("lines", []):
+            print(line)
+        print("ACCOUNT_PARTITION_EOF")
+        if op.get("executable"):
+            print(f"chmod +x {sh(p)}")
+    elif kind == "remove_file":
+        p = op["path"]
+        print(f"[ -e {sh(p)} ] && mv {sh(p)} {sh(p)}.bak.$(date +%Y%m%d-%H%M%S)-$$")
+    elif kind in ("registry_put", "registry_delete"):
+        print(f"# 계정 registry({op['registry']}) 갱신은 스킬이 관리 — 수동 실행 시 생략 가능")
+    elif kind == "keychain_delete":
+        print(f"security delete-generic-password -s {sh(op['service'])} || true")
     else:
         print(f"# (unknown op: {kind})")
 PYEOF

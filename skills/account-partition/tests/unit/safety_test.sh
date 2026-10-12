@@ -49,8 +49,12 @@ assert_contains "$backup_path" ".bak." "백업 파일 이름에 .bak. 포함"
 assert_eq "$(cat "$backup_path")" "test content" "백업 내용 보존"
 
 # 백업 권한 0600
-perm=$(stat -f '%Lp' "$backup_path" 2>/dev/null || stat -c '%a' "$backup_path" 2>/dev/null)
-assert_eq "$perm" "600" "백업 파일 권한 0600"
+perm=$(stat -c '%a' "$backup_path" 2>/dev/null || stat -f '%Lp' "$backup_path" 2>/dev/null)  # GNU 먼저: GNU 의 stat -f 는 파일시스템 정보를 출력해 성공해 버린다
+if is_windows; then
+  ASSERT_PASS=$((ASSERT_PASS + 1)); echo "  ✓ 백업 파일 권한 0600 (Windows: POSIX 권한 없음, 생략)"
+else
+  assert_eq "$perm" "600" "백업 파일 권한 0600"
+fi
 
 # 격리 보존
 mkdir -p "$sb/.claude-test"

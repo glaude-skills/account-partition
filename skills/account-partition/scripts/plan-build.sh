@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 액션별 plan JSON 빌더.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
 build_add() {
   local name="$1" config_dir="$2" shared_pool="$3"

@@ -8,6 +8,7 @@
 #   safety.sh quarantine <config_dir> <item_path>  → <config_dir>/.account-partition-quarantine/<name>.<ts> 으로 이동, 경로 출력
 
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 
 now_ts() {
   date +%Y%m%d-%H%M%S
@@ -73,35 +74,54 @@ release_lock() {
 check_active_processes() {
   local config_dir="${1:?Usage: $0 check-active <config_dir>}"
 
-  # daemon 마커 확인
-  if [[ -f "$config_dir/daemon.lock" ]]; then
-    local daemon_pid=""
-    if [[ -f "$config_dir/daemon.status.json" ]]; then
-      daemon_pid=$(STATUS_PATH="$config_dir/daemon.status.json" python3 -c "
+  # daemon 마커 확인 — daemon.lock 의 pid 와 daemon.status.json 의 supervisorPid (구버전: pid) 모두 본다
+  if [[ -f "$config_dir/daemon.lock" || -f "$config_dir/daemon.status.json" ]]; then
+    local daemon_pid
+    daemon_pid=$(CFG="$config_dir" python3 -c "
 import json, os, sys
-try:
-    with open(os.environ['STATUS_PATH']) as f:
-        d = json.load(f)
-    print(d.get('pid', ''))
-except Exception:
-    pass
+sys.path.insert(0, os.path.dirname(os.environ['AP_LIB']))
+from aplib import npath
+cfg = npath(os.environ['CFG'])
+for fn, keys in (('daemon.lock', ('pid',)), ('daemon.status.json', ('supervisorPid', 'pid'))):
+    try:
+        with open(os.path.join(cfg, fn), encoding='utf-8') as f:
+            d = json.load(f)
+    except Exception:
+        continue
+    for k in keys:
+        if d.get(k):
+            print(d[k]); raise SystemExit
 " 2>/dev/null)
-    fi
-    if [[ -n "$daemon_pid" ]] && kill -0 "$daemon_pid" 2>/dev/null; then
+    if [[ -n "$daemon_pid" ]] && ap_pid_alive "$daemon_pid"; then
       echo "Active daemon: PID $daemon_pid (config: $config_dir)"
       return 0
     fi
   fi
 
-  # claude 프로세스 환경변수 매칭 (best-effort)
-  while IFS= read -r pid; do
-    local env_dir
-    env_dir=$(ps eww -p "$pid" 2>/dev/null | grep -oE "CLAUDE_CONFIG_DIR=[^ ]+" | head -1 | cut -d= -f2)
-    if [[ "$env_dir" == "$config_dir" ]]; then
-      echo "Active claude process: PID $pid (config: $config_dir)"
-      return 0
-    fi
-  done < <(pgrep -f 'claude' 2>/dev/null || true)
+  # claude 프로세스 환경변수 매칭 (best-effort). Windows 는 다른 프로세스 env 를 읽을 수 없어 daemon 마커만 본다.
+  case "$(ap_os)" in
+    linux)
+      local envf
+      for envf in /proc/[0-9]*/environ; do
+        local pid="${envf#/proc/}"; pid="${pid%/environ}"
+        grep -q claude "/proc/$pid/cmdline" 2>/dev/null || continue
+        if tr '\0' '\n' < "$envf" 2>/dev/null | grep -qxF "CLAUDE_CONFIG_DIR=$config_dir"; then
+          echo "Active claude process: PID $pid (config: $config_dir)"
+          return 0
+        fi
+      done
+      ;;
+    macos)
+      while IFS= read -r pid; do
+        local env_dir
+        env_dir=$(ps eww -p "$pid" 2>/dev/null | grep -oE "CLAUDE_CONFIG_DIR=[^ ]+" | head -1 | cut -d= -f2)
+        if [[ "$env_dir" == "$config_dir" ]]; then
+          echo "Active claude process: PID $pid (config: $config_dir)"
+          return 0
+        fi
+      done < <(pgrep -f 'claude' 2>/dev/null || true)
+      ;;
+  esac
 
   return 1
 }
@@ -112,7 +132,9 @@ backup_file() {
   local ts; ts=$(unique_ts)
   local backup="${path}.bak.${ts}"
   cp -p "$path" "$backup" || { echo "Error: backup failed (cp)" >&2; return 1; }
-  chmod 0600 "$backup" || { echo "Error: chmod failed on $backup" >&2; rm -f "$backup"; return 1; }
+  if [[ "$(ap_os)" != windows ]]; then
+    chmod 0600 "$backup" || { echo "Error: chmod failed on $backup" >&2; rm -f "$backup"; return 1; }
+  fi
   echo "$backup"
 }
 

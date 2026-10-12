@@ -29,7 +29,12 @@ echo "$plan" | PLAN_DIR="$sb" SCRIPTS_DIR="$SCRIPTS" bash "$SCRIPTS/plan-execute
 
 # 결과 검증
 assert_file_exists "$sb/.claude-test"
-assert_symlink_target "$sb/.claude-test/settings.json" "$sb/shared/settings.json"
+if is_windows; then
+  # 개발자 모드 없는 Windows 는 파일 링크를 하드링크로 대체한다
+  assert_same_file "$sb/.claude-test/settings.json" "$sb/shared/settings.json" "파일 링크 (Windows: symlink 또는 하드링크)"
+else
+  assert_symlink_target "$sb/.claude-test/settings.json" "$sb/shared/settings.json"
+fi
 
 content=$(cat "$sb/.zshrc")
 assert_contains "$content" "# account-partition: test" "marker 추가"

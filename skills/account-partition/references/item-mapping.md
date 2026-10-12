@@ -34,7 +34,13 @@
 
 | 라벨 | 메커니즘 |
 |---|---|
-| 자격증명 토큰 | macOS keychain. service 이름 = `Claude Code-credentials-<hash>` (hash 알고리즘은 v1에서 미확인 — 로그인 판별은 `.claude.json`의 `oauthAccount.emailAddress`로) |
+| 자격증명 토큰 | 저장 폴더 = `CLAUDE_SECURESTORAGE_CONFIG_DIR` (없으면 config 폴더). Windows·Linux 는 그 폴더의 `.credentials.json`, macOS 는 키체인 service `Claude Code-credentials-<sha256(폴더 경로 문자열) 앞 8자리>` (변수가 모두 없으면 접미사 없음). Claude Code 2.1.292 바이너리에서 확인 |
+
+## 토큰만 분리 모드 (v0.5)
+
+config 폴더를 기준 계정과 통째로 공유하고 토큰 저장 폴더만 `~/.claude-<name>` 으로 분리한다. 위 표의 "격리 강제 항목"(설정, `.claude.json`, 프로젝트·메모리, 세션, 데몬·잡)까지 모두 공유되므로, 세션 목록(←← / `/resume`)과 백그라운드 잡이 두 계정에 똑같이 보인다.
+
+제약: 세션 프로세스의 토큰은 그 세션을 **띄운** 계정의 것으로 고정된다. 다른 계정에서 띄운 세션에 참여(attach)하면 그 계정 토큰이 소모된다. 계정을 바꾸려면 세션을 끝내고 `claude-<name> --resume <id>` 로 다시 띄운다.
 
 ## 매트릭스 셀 범례
 
