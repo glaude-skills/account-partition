@@ -40,7 +40,9 @@
 
 config 폴더를 기준 계정과 통째로 공유하고 토큰 저장 폴더만 `~/.claude-<name>` 으로 분리한다. 위 표의 "격리 강제 항목"(설정, `.claude.json`, 프로젝트·메모리, 세션, 데몬·잡)까지 모두 공유되므로, 세션 목록(←← / `/resume`)과 백그라운드 잡이 두 계정에 똑같이 보인다.
 
-제약: 세션 프로세스의 토큰은 그 세션을 **띄운** 계정의 것으로 고정된다. 다른 계정에서 띄운 세션에 참여(attach)하면 그 계정 토큰이 소모된다. 계정을 바꾸려면 세션을 끝내고 `claude-<name> --resume <id>` 로 다시 띄운다.
+제약: 세션 프로세스의 토큰은 그 세션을 **띄운** 계정의 것으로 고정된다. 다른 계정에서 띄운 세션에 참여(attach)하면 그 계정 토큰이 소모된다. 멈춘 백그라운드 세션을 `claude attach` 나 `claude --bg --resume <id>`(플래그 없이)로 깨워도 `jobs/<id>/state.json` 의 `providerEnv` 가 다시 쓰인다. `--bg --resume` 에 플래그를 붙이면 새 id 의 복사본이 된다 (2.1.311 실측).
+
+v0.5.2 래퍼는 `attach` 를 `~/.claude-shared/ap_attach.py` 로 넘긴다. `providerEnv` 의 토큰 폴더와 지금 계정 토큰 폴더가 다르면 `claude stop <id>` 뒤 세션 `cwd` 에서 `claude --resume <sessionId> <respawnFlags>` 를 포그라운드로 연다. 같은 transcript 에 이어 기록된다 (2.1.311 실측). Claude Code 화면 안의 ←← 참여는 래퍼를 거치지 않는다.
 
 ## 매트릭스 셀 범례
 

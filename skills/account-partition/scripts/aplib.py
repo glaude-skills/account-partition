@@ -34,6 +34,9 @@ import sys
 
 MANAGED_KEYS = ("CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 DEFAULT_CONFIG = "~/.claude"
+# attach 가로채기 헬퍼. 래퍼가 `attach` 를 받으면 이 파일을 대신 실행한다 (ap_attach.py 참조)
+ATTACH_HELPER = "~/.claude-shared/ap_attach.py"
+ATTACH_HELPER_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ap_attach.py")
 NAME_RE = r"[A-Za-z0-9_-]+"
 
 # ─────────────────────────── OS / 경로 ───────────────────────────
@@ -373,6 +376,10 @@ def _cmd_path(p: str) -> str:
     return p.replace("/", "\\")
 
 
+def _py_cmd(osname: str) -> str:
+    return "py -3" if osname == "windows" else "python3"
+
+
 def render_posix(name: str, acct: dict, osname: str | None = None) -> list[str]:
     osname = osname or ap_os()
     parts = ["env", "-u", "CLAUDE_CONFIG_DIR", "-u", "CLAUDE_SECURESTORAGE_CONFIG_DIR"]
@@ -381,11 +388,13 @@ def render_posix(name: str, acct: dict, osname: str | None = None) -> list[str]:
             parts.append(f"{k}={_posix_path(v, osname)}")
     for k, v in (acct.get("extra_env") or {}).items():
         parts.append(f"{k}={shlex.quote(v)}")
-    parts += ["claude", '"$@"']
+    env = " ".join(parts)
+    helper = f"{_py_cmd(osname)} {_posix_path(ATTACH_HELPER, osname)}"
     return [
         _begin(name),
         f"unalias claude-{name} 2>/dev/null || true",
-        f"claude-{name}() {{ {' '.join(parts)}; }}",
+        f'claude-{name}() {{ if [ "${{1:-}}" = attach ]; then {env} {helper} "$@"; '
+        f'else {env} claude "$@"; fi; }}',
         _end(name),
     ]
 
@@ -408,8 +417,12 @@ def render_powershell(name: str, acct: dict) -> list[str]:
         "  foreach ($k in $apKeys) { $apSaved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process') }",
         "  try {",
         *sets,
-        "    $apExe = Get-Command claude -CommandType Application -ErrorAction Stop | Select-Object -First 1",
-        "    & $apExe @args",
+        "    if ($args.Count -gt 0 -and $args[0] -eq 'attach') {",
+        f"      & {_py_cmd(ap_os())} {_ps_path(ATTACH_HELPER)} @args",
+        "    } else {",
+        "      $apExe = Get-Command claude -CommandType Application -ErrorAction Stop | Select-Object -First 1",
+        "      & $apExe @args",
+        "    }",
         "  } finally {",
         "    foreach ($k in $apKeys) { [Environment]::SetEnvironmentVariable($k, $apSaved[$k], 'Process') }",
         "  }",
@@ -424,7 +437,10 @@ def render_cmd(name: str, acct: dict) -> list[str]:
         lines.append(f'set "{k}={"" if v is None else _cmd_path(v)}"')
     for k, v in (acct.get("extra_env") or {}).items():
         lines.append(f'set "{k}={v}"')
-    lines.append("claude %*")
+    lines += [
+        f'if /i "%~1"=="attach" ( {_py_cmd("windows")} "{_cmd_path(ATTACH_HELPER)}" %* & exit /b )',
+        "claude %*",
+    ]
     return lines
 
 
@@ -437,7 +453,10 @@ def render_sh(name: str, acct: dict, osname: str | None = None) -> list[str]:
             lines.append(f"export {k}={_posix_path(v, osname)}")
     for k, v in (acct.get("extra_env") or {}).items():
         lines.append(f"export {k}={shlex.quote(v)}")
-    lines.append('exec claude "$@"')
+    lines += [
+        f'if [ "${{1:-}}" = attach ]; then exec {_py_cmd(osname)} {_posix_path(ATTACH_HELPER, osname)} "$@"; fi',
+        'exec claude "$@"',
+    ]
     return lines
 
 
@@ -984,8 +1003,15 @@ def registry_save(path: str, reg: dict) -> None:
 # ─────────────────────────── plan 생성 ───────────────────────────
 
 
+def _attach_helper_op() -> dict:
+    with open(ATTACH_HELPER_SRC, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    return {"op": "write_file", "path": from_home_rel(ATTACH_HELPER), "lines": lines, "eol": "lf",
+            "encoding": "utf-8"}
+
+
 def _write_ops_for(name: str, acct: dict, targets: list[dict]) -> list[dict]:
-    ops = []
+    ops = [_attach_helper_op()] if targets else []
     for t in targets:
         if t["kind"] in ("zsh", "bash"):
             ops.append({"op": "write_block", "file": t["path"], "kind": "posix", "name": name,
@@ -1068,8 +1094,8 @@ def plan_add(name: str, mode: str, config_dir: str, token_dir: str | None, share
 
 
 TOKEN_ONLY_WARNINGS = [
-    "세션 목록(←← / /resume)에서 다른 계정이 띄운 세션에 참여하면 그 세션을 띄운 계정의 토큰이 쓰입니다. "
-    "계정을 바꾸려면 세션을 끝내고 claude-<이름> --resume <id> 로 다시 띄우세요.",
+    "세션 목록(←←)에서 다른 계정이 띄운 세션에 참여하면 그 세션을 띄운 계정의 토큰이 쓰입니다. "
+    "claude-<이름> attach <id> 는 이를 막습니다: 토큰이 다르면 세션을 멈추고 이 계정으로 --resume 합니다.",
     "기준 계정과 설정·권한·MCP·메모리·플러그인·세션 기록을 모두 공유합니다.",
     "화면에 표시되는 계정 이메일(.claude.json)은 공유되므로 마지막에 로그인한 계정 것으로 보일 수 있습니다. 실제 토큰은 분리돼 있습니다.",
 ]
@@ -1229,7 +1255,11 @@ def apply_op(op: dict) -> dict:
         op["_backup_path"] = _backup(p) if op.get("backup_if_exists") else None
         op["_created"] = not os.path.lexists(p)
         eol = b"\r\n" if op.get("eol") == "crlf" else b"\n"
-        _write_bytes(p, _join(b"", [_mk(ln, eol) for ln in op["lines"]]))
+        if op.get("encoding") == "utf-8":  # 셸 블록이 아닌 헬퍼 파일만 (블록은 ASCII 전용)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            _write_bytes(p, eol.join(ln.encode("utf-8") for ln in op["lines"]) + eol)
+        else:
+            _write_bytes(p, _join(b"", [_mk(ln, eol) for ln in op["lines"]]))
         if op.get("executable") and not _real_windows():
             try:
                 os.chmod(p, 0o755)

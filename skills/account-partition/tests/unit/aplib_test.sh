@@ -43,6 +43,19 @@ assert_contains "$out" 'set "CLAUDE_SECURESTORAGE_CONFIG_DIR="' "cmd 상속 토�
 out=$(AP_OS_OVERRIDE=linux AP render sh "$TOK")
 assert_contains "$out" 'unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR' "sh 래퍼 unset"
 assert_contains "$out" 'exec claude "$@"' "sh 래퍼 exec"
+echo "── attach 가로채기"
+out=$(AP_OS_OVERRIDE=windows AP render posix "$TOK")
+assert_contains "$out" 'if [ "${1:-}" = attach ]; then env -u CLAUDE_CONFIG_DIR' "posix: attach 는 같은 env 로 헬퍼 호출"
+assert_contains "$out" 'py -3 "$USERPROFILE\.claude-shared\ap_attach.py" "$@"; else env' "posix(Windows): py -3 + 네이티브 헬퍼 경로"
+out=$(AP_OS_OVERRIDE=linux AP render posix "$TOK")
+assert_contains "$out" 'python3 "$HOME/.claude-shared/ap_attach.py" "$@"' "posix(Linux): python3"
+out=$(AP_OS_OVERRIDE=windows AP render powershell "$TOK")
+assert_contains "$out" "if (\$args.Count -gt 0 -and \$args[0] -eq 'attach') {" "PowerShell: attach 분기"
+assert_contains "$out" "& py -3 (Join-Path \$HOME '.claude-shared\\ap_attach.py') @args" "PowerShell: 헬퍼 호출"
+out=$(AP render cmd "$TOK")
+assert_contains "$out" 'if /i "%~1"=="attach" ( py -3 "%USERPROFILE%\.claude-shared\ap_attach.py" %* & exit /b )' "cmd: attach 분기"
+out=$(AP_OS_OVERRIDE=linux AP render sh "$TOK")
+assert_contains "$out" 'if [ "${1:-}" = attach ]; then exec python3 "$HOME/.claude-shared/ap_attach.py" "$@"; fi' "sh: attach 분기"
 nonascii=$( { AP render posix "$TOK"; AP render powershell "$TOK"; AP render cmd "$TOK"; AP render sh "$TOK"; } | LC_ALL=C grep -c '[^ -~]' || true)
 assert_eq "$nonascii" "0" "생성 블록은 ASCII 전용"
 
@@ -152,6 +165,8 @@ assert_contains "$(cat "$H/.zshrc")" 'claude-dami() {' "zsh 에도 같은 정의
 ls "$H/bin/" | grep -q 'claude-dami.cmd.bak.' && { ASSERT_PASS=$((ASSERT_PASS+1)); echo "  ✓ 기존 래퍼 백업"; } || { ASSERT_FAIL=$((ASSERT_FAIL+1)); echo "  ✗ 기존 래퍼 백업 없음"; }
 reg_mode=$(python3 -c "import json; print(json.load(open(r'$(cygpath -w "$H/accounts.json" 2>/dev/null || echo "$H/accounts.json")'))['accounts']['dami']['token_dir'])")
 assert_eq "$reg_mode" "~/.claude-dami" "registry 에 토큰 폴더 기록"
+assert_file_exists "$H/.claude-shared/ap_attach.py" "attach 헬퍼 설치"
+assert_eq "$(head -c 22 "$H/.claude-shared/ap_attach.py")" "#!/usr/bin/env python3" "헬퍼 내용 (UTF-8 그대로)"
 summ=$(AP accounts --registry "$H/accounts.json")
 assert_eq "$(get "print(sorted(e['name'] for e in d['externals'] if not e['in_registry']))")" "['han', 'weird', 'work', 'z']" "adopt 후 dami 는 외부 목록에서 빠짐"
 
