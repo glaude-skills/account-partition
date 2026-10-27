@@ -44,6 +44,22 @@ config 폴더를 기준 계정과 통째로 공유하고 토큰 저장 폴더만
 
 v0.5.2 래퍼는 `attach` 를 `~/.claude-shared/ap_attach.py` 로 넘긴다. `providerEnv` 의 토큰 폴더와 지금 계정 토큰 폴더가 다르면 `claude stop <id>` 뒤 세션 `cwd` 에서 `claude --resume <sessionId> <respawnFlags>` 를 포그라운드로 연다. 같은 transcript 에 이어 기록된다 (2.1.311 실측). Claude Code 화면 안의 ←← 참여는 래퍼를 거치지 않는다.
 
+### MCP 의 공유 범위
+
+| 종류 | 저장 위치 | 토큰만 분리에서 |
+|---|---|---|
+| 로컬 MCP 서버 정의 (`claude mcp add`) | `.claude.json` / `settings.json` | 공유 |
+| claude.ai 커넥터 목록 | claude.ai 서버 (`GET /v1/mcp_servers`, 조직·사용자 기준) | 같은 조직이면 같음. 로컬에서 바꿀 수 없음 |
+| claude.ai 커넥터 로그인 (어느 외부 계정에 붙었나) | claude.ai 서버, 사용자별 | 공유 불가. 계정마다 claude.ai 에서 다시 연결 |
+
+`claude mcp list` 는 로컬 서버만 보여 주고 claude.ai 커넥터는 나오지 않는다 (2.1.311 실측).
+
+### 기준 계정을 토큰만 분리로 바꾸기
+
+기준 계정(`~/.claude`, standard)에 이름을 붙여 쓰다가 기본 `claude` 와 따로 관리해야 할 때가 있다. edit 은 모드 변경을 지원하지 않으므로 registry 항목을 `mode: token-only`, `token_dir: ~/.claude-<name>` 으로 바꾸고 `_write_ops_for` + `apply_op` 로 셸 정의를 다시 쓴다(`registry_save` 로 기록).
+
+토큰은 `~/.claude/.credentials.json` 을 복사하지 말고 `/account-partition:login <name>` 으로 새로 로그인한다. 복사하면 두 폴더가 같은 refresh 토큰을 갖고, 한쪽이 갱신하는 순간 다른 쪽이 끊긴다(v0.5.1 기록과 같은 원인).
+
 ## 매트릭스 셀 범례
 
 | 표시 | 의미 |

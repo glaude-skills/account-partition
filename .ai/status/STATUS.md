@@ -1,6 +1,10 @@
 # 진행 상태
 
-## 현재: v0.5.2 (2026-10-27)
+## 현재: v0.5.3 (2026-10-27)
+
+- v0.5.3: 문서만. 세션 id 찾는 법, MCP 공유 범위(로컬 서버는 공유, claude.ai 커넥터 로그인은 사용자별이라 공유 불가), 토큰 주인 확인 API, 기준 계정을 토큰만 분리로 바꾸는 절차와 토큰 복사 금지
+
+## v0.5.2 (2026-10-27)
 
 - v0.5.2: 래퍼가 `attach` 를 가로챈다. 세션을 띄운 토큰 폴더(`jobs/<id>/state.json` 의 `providerEnv`)와 지금 계정이 다르면 세션을 멈추고 이 계정으로 포그라운드 `--resume` 한다. 헬퍼는 `~/.claude-shared/ap_attach.py` (plan 이 UTF-8 로 설치). 2.1.311 실측: `--bg --resume` 은 저장된 토큰 폴더를 다시 쓰고, 플래그를 붙이면 복사본이 생겨 쓸 수 없음
 
@@ -32,3 +36,5 @@
 - Codex 리뷰 P1-2(활성 세션 게이트 정밀도), P1-4(`claude auth` feature-detect), P2(SKILL 템플릿 통일, CHANGELOG)
 - fish 자동 기록
 - edit 흐름의 registry 연동 (현재는 `~/.claude-<name>` 경로 가정)
+- edit 에서 모드 변경(standard 를 token-only 로) 지원. 지금은 item-mapping 의 수동 절차
+- list 의 기준 계정 이메일 표시: `.claude.json` 대신 토큰으로 `/api/oauth/profile` 조회

@@ -20,7 +20,9 @@
 - 세션 목록에서 **다른 계정이 띄운 세션에 참여하면, 그 세션을 띄운 계정의 토큰이 쓰입니다.** 참여(attach)는 이미 떠 있는 세션 프로세스에 붙기만 하고, 토큰은 프로세스가 뜰 때 정해지기 때문입니다. 멈춘 백그라운드 세션을 깨울 때도 데몬이 저장해 둔 토큰 폴더가 다시 쓰입니다.
 - 그래서 래퍼는 `claude-<name> attach <id|이름>` 을 가로챕니다(v0.5.2). 세션을 띄운 토큰 폴더(`~/.claude/jobs/<id>/state.json` 의 `providerEnv`)가 지금 계정과 같으면 그대로 붙고, 다르면 세션을 멈춘 뒤(실행 중이면 y/N 확인) 그 세션 폴더에서 `claude --resume <세션ID> <저장된 옵션>` 을 포그라운드로 엽니다. 헬퍼는 `~/.claude-shared/ap_attach.py` 에 설치되고 Python 3 (`py -3` 또는 `python3`)이 필요합니다.
 - Claude Code 화면 안의 세션 목록(←←)에서 고르는 참여는 래퍼를 거치지 않으므로 막을 수 없습니다. 다른 계정 세션은 셸에서 `claude-<name> attach` 로 여세요.
-- 화면에 표시되는 계정 이메일은 공유 파일(`.claude.json`)에 있어 마지막에 로그인한 계정 것으로 보일 수 있습니다. 실제 토큰은 분리돼 있습니다.
+- 세션 id 는 `claude agents`(목록 화면) 또는 `claude agents --json` 에서, 백그라운드로 띄울 때 출력(`backgrounded · <id> · <이름>`)에서 볼 수 있습니다. id 대신 이름 일부도 됩니다. `interactive` 세션(터미널에서 직접 띄운 세션)은 id 가 없어 attach 대상이 아닙니다.
+- MCP 는 두 갈래입니다. `claude mcp add` 로 등록한 로컬 서버 정의는 `~/.claude.json` 에 있어 공유됩니다. claude.ai 커넥터(Notion, Figma 등)는 목록과 로그인이 claude.ai 서버에 **사용자별로** 저장되므로 공유할 수 없습니다. 같은 조직이면 목록은 같아도, 각 커넥터가 어느 외부 계정(예: 어느 Notion 워크스페이스)에 붙었는지는 계정마다 다릅니다. 맞추려면 각 계정으로 claude.ai 에 들어가 같은 외부 계정으로 다시 연결해야 합니다.
+- 화면에 표시되는 계정 이메일은 공유 파일(`.claude.json`)에 있어 마지막에 로그인한 계정 것으로 보일 수 있습니다. 실제 토큰은 분리돼 있습니다. 토큰 주인은 `https://api.anthropic.com/api/oauth/profile` 에 그 토큰(`Authorization: Bearer`, `anthropic-beta: oauth-2025-04-20`)으로 물어 확인합니다.
 - `CLAUDE_SECURESTORAGE_CONFIG_DIR` 은 Claude Code 내부 변수입니다(2.1.292에서 확인). 공식 문서에 없어서 향후 버전에서 동작이 바뀔 수 있습니다.
 
 ## 설치
